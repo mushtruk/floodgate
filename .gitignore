@@ -8,6 +8,7 @@
 # Example binaries
 examples/*/basic
 examples/*/grpc-server
+examples/*/http-server
 
 # Test binary, built with `go test -c`
 *.test

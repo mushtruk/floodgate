@@ -11,7 +11,7 @@ A sophisticated, production-ready Go library for adaptive backpressure and load 
 - ⚡ **Adaptive Backpressure**: Automatically adjusts to system load using EMA (Exponential Moving Average) latency tracking
 - 📊 **Percentile Tracking**: Monitors P50, P95, P99 latencies for tail latency detection
 - 🔌 **Circuit Breaker**: Prevents rapid on/off toggling during emergency states
-- 🎯 **gRPC Interceptor**: Drop-in middleware for gRPC servers
+- 🎯 **gRPC & HTTP Middleware**: Drop-in middleware for gRPC and HTTP servers
 - 📈 **Multi-Signal Detection**: Combines EMA, slope, drift, and percentiles for accurate backpressure levels
 - 🔧 **Fully Configurable**: Environment-based thresholds for different deployment scenarios
 - ⚡ **High Performance**: Sub-microsecond stats evaluation, zero allocations, <3μs total overhead per request
@@ -81,6 +81,38 @@ func main() {
     )
 
     // ... register services and serve
+}
+```
+
+### HTTP Server with Backpressure
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+    "time"
+
+    bphttp "github.com/mushtruk/floodgate/http"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Configure backpressure
+    cfg := bphttp.DefaultConfig()
+    cfg.Thresholds.P95Critical = 1 * time.Second
+
+    // Create your HTTP handler
+    mux := http.NewServeMux()
+    mux.HandleFunc("/api/users", handleUsers)
+
+    // Wrap with backpressure middleware
+    handler := bphttp.Middleware(ctx, cfg)(mux)
+
+    // Start server
+    http.ListenAndServe(":8080", handler)
 }
 ```
 
@@ -230,8 +262,8 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
 ### Built-in Metrics
 
-The gRPC interceptor logs:
-- Backpressure activation events (level, method, latencies)
+The gRPC and HTTP middleware log:
+- Backpressure activation events (level, method/route, latencies)
 - Periodic health metrics (cache usage, drop rates, circuit state)
 - Circuit breaker state changes
 
@@ -254,6 +286,7 @@ logger.Info("latency_stats",
 See the [examples](examples/) directory for complete working examples:
 - [Basic Usage](examples/basic/main.go)
 - [gRPC Server](examples/grpc-server/main.go)
+- [HTTP Server](examples/http-server/main.go)
 
 ## Testing
 
