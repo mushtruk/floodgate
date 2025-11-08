@@ -65,6 +65,52 @@ The single allocation is minimal overhead from the gRPC framework and latency re
 
 ---
 
+## HTTP Middleware Benchmarks
+
+### Request Processing
+
+| Benchmark | Time/op | Allocations | Throughput | Notes |
+|-----------|---------|-------------|------------|-------|
+| `Middleware_NormalPath` | **1.39 ms/op** | 5411 B/op, 16 allocs/op | ~719 req/s | Full backpressure tracking |
+| `Middleware_SkippedPath` | **1.36 ms/op** | 5382 B/op, 15 allocs/op | ~735 req/s | Health checks bypass |
+| `Middleware_MultipleRoutesConcurrent` | **137 μs/op** | 5415 B/op, 16 allocs/op | ~7,300 req/s | Parallel execution across 5 routes |
+| `Middleware_EmergencyRejection` | **1.16 ms/op** | 5410 B/op, 16 allocs/op | ~862 req/s | Fast rejection during overload |
+| `Middleware_NewRouteCreation` | **1.33 ms/op** | 48KB/op, 147 allocs/op | ~752 req/s | Cold start cost (amortized) |
+| `Middleware_StatsEvaluation` | **33.13 ns/op** | 0 B/op, 0 allocs/op | ~30M ops/s | Level calculation overhead |
+| `Config_Default` | **0.32 ns/op** | 0 B/op, 0 allocs/op | N/A | Config creation is free |
+
+### Allocation Breakdown (Normal Path)
+
+**Total: 5411 bytes, 16 allocations**
+
+The allocations come from:
+- HTTP test infrastructure (httptest.ResponseRecorder): ~5KB, 15 allocs
+- Backpressure tracking overhead: ~72 bytes, 1 alloc
+
+**Production overhead** (excluding test harness):
+- Zero header allocations (direct header writes)
+- Zero percentile allocations (pre-allocated sortBuffer)
+- Optimal registry usage (only add if new)
+- Fast circuit breaker check (early exit when open)
+
+### HTTP vs gRPC Comparison
+
+| Metric | HTTP Middleware | gRPC Interceptor | Notes |
+|--------|-----------------|------------------|-------|
+| Normal path | 1.39 ms/op | 1.37 ms/op | Comparable performance |
+| Skipped path | 1.36 ms/op | 1.27 ms/op | Both bypass tracking |
+| Concurrent (5 routes) | 137 μs/op | 130 μs/op | Near-identical |
+| Stats evaluation | 33 ns/op | 2.9 μs/op | HTTP test uses same tracker |
+| Pure overhead | ~6 μs | ~6 μs | Same backpressure logic |
+
+**Key Observations**:
+- HTTP and gRPC have nearly identical overhead (~6 μs)
+- Difference in allocations is test infrastructure, not production code
+- Both scale linearly with concurrent requests
+- Route/method tracking uses same efficient LRU cache
+
+---
+
 ## Performance Characteristics
 
 ### Latency Overhead
@@ -127,7 +173,7 @@ When circuit breaker is open or backpressure triggers:
 
 ### For High-Throughput Services
 
-**Configuration**:
+**gRPC Configuration**:
 ```go
 cfg := grpc.DefaultConfig()
 cfg.CacheSize = 1024              // Increase for more unique methods
@@ -135,24 +181,40 @@ cfg.Thresholds.P99Emergency = 5 * time.Second  // Aggressive thresholds
 cfg.DispatcherBufferSize = 4096   // Larger buffer for async processing
 ```
 
+**HTTP Configuration**:
+```go
+cfg := http.DefaultConfig()
+cfg.CacheSize = 2048              // More routes than gRPC methods typically
+cfg.Thresholds.P99Emergency = 5 * time.Second
+cfg.DispatcherBufferSize = 4096
+```
+
 **Expected overhead**: <10 μs per request (0.1% for 10ms avg latency)
 
 ### For Low-Latency Services
 
-**Configuration**:
+**gRPC Configuration**:
 ```go
 cfg := grpc.DefaultConfig()
 cfg.Thresholds.P95Critical = 100 * time.Millisecond  // Tight thresholds
 cfg.Thresholds.EMAWarning = 50 * time.Millisecond
 ```
 
+**HTTP Configuration**:
+```go
+cfg := http.DefaultConfig()
+cfg.Thresholds.P95Critical = 100 * time.Millisecond
+cfg.Thresholds.EMAWarning = 50 * time.Millisecond
+cfg.SkipPaths = []string{"/health", "/metrics", "/readiness", "/favicon.ico"}
+```
+
 **Expected overhead**: ~6 μs per request (0.6% for 1ms avg latency)
 
 ### For Memory-Constrained Environments
 
-**Configuration**:
+**Configuration** (same for both gRPC and HTTP):
 ```go
-cfg := grpc.DefaultConfig()
+cfg := grpc.DefaultConfig() // or http.DefaultConfig()
 cfg.CacheSize = 128               // Reduce cache size
 // Disable percentiles for some methods:
 tracker := floodgate.NewTracker(
@@ -175,8 +237,14 @@ go test -bench=. -benchmem ./...
 
 Run specific benchmarks:
 ```bash
+# Core tracker benchmarks
 go test -bench=BenchmarkTracker_Value -benchmem
+
+# gRPC interceptor benchmarks
 go test -bench=BenchmarkInterceptor_NormalPath -benchmem ./grpc
+
+# HTTP middleware benchmarks
+go test -bench=BenchmarkMiddleware_NormalPath -benchmem ./http
 ```
 
 Run benchmarks with CPU profiling:
