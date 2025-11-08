@@ -4,7 +4,6 @@ package http
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -37,6 +36,9 @@ type Config struct {
 	RetryAfterEmergency int
 	RetryAfterCritical  int
 	RetryAfterCircuit   int
+
+	// Logger for backpressure events. If nil, uses DefaultLogger.
+	Logger floodgate.Logger
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -65,6 +67,8 @@ func DefaultConfig() Config {
 		RetryAfterEmergency: 10,
 		RetryAfterCritical:  5,
 		RetryAfterCircuit:   30,
+
+		Logger: floodgate.NewDefaultLogger(),
 	}
 }
 
@@ -84,6 +88,12 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 	)
 	skipPaths := cfg.SkipPaths
 
+	// Use provided logger or default
+	logger := cfg.Logger
+	if logger == nil {
+		logger = floodgate.NewDefaultLogger()
+	}
+
 	// Periodic metrics
 	if cfg.EnableMetrics {
 		go func() {
@@ -98,10 +108,14 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 					dropRate := dispatcher.DropRate()
 
 					if cacheLen > 0 || dropRate > 0 {
-						log.Printf("Backpressure metrics - cache: %d/%d (%.1f%%), dispatcher drops: %d/%d (%.2f%%), circuit: %s",
-							cacheLen, cfg.CacheSize, float64(cacheLen)/float64(cfg.CacheSize)*100,
-							dispatcher.DroppedCount(), dispatcher.TotalCount(), dropRate,
-							circuitBreaker.State())
+						logger.InfoContext(ctx, "backpressure metrics",
+							"cache_used", cacheLen,
+							"cache_size", cfg.CacheSize,
+							"cache_pct", float64(cacheLen)/float64(cfg.CacheSize)*100,
+							"drops", dispatcher.DroppedCount(),
+							"total", dispatcher.TotalCount(),
+							"drop_rate", dropRate,
+							"circuit", circuitBreaker.State())
 					}
 				}
 			}
@@ -135,7 +149,7 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 
 			if !circuitBreaker.Allow() {
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", cfg.RetryAfterCircuit))
-				log.Printf("Circuit breaker open for %s", routeKey)
+				logger.WarnContext(r.Context(), "circuit breaker open", "route", routeKey)
 				http.Error(w, "Service Unavailable - circuit breaker open", http.StatusServiceUnavailable)
 				return
 			}
@@ -147,22 +161,32 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 			case floodgate.Emergency:
 				circuitBreaker.RecordFailure()
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", cfg.RetryAfterEmergency))
-				log.Printf("Backpressure emergency for %s - EMA: %v, P95: %v, P99: %v",
-					routeKey, stats.EMA, stats.P95, stats.P99)
+				logger.ErrorContext(r.Context(), "backpressure emergency",
+					"route", routeKey,
+					"ema", stats.EMA,
+					"p95", stats.P95,
+					"p99", stats.P99)
 				http.Error(w, "Service Unavailable - emergency backpressure", http.StatusServiceUnavailable)
 				return
 
 			case floodgate.Critical:
 				circuitBreaker.RecordFailure()
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", cfg.RetryAfterCritical))
-				log.Printf("Backpressure critical for %s - EMA: %v, P95: %v, P99: %v",
-					routeKey, stats.EMA, stats.P95, stats.P99)
+				logger.ErrorContext(r.Context(), "backpressure critical",
+					"route", routeKey,
+					"ema", stats.EMA,
+					"p95", stats.P95,
+					"p99", stats.P99)
 				http.Error(w, "Service Unavailable - critical backpressure", http.StatusServiceUnavailable)
 				return
 
 			case floodgate.Warning, floodgate.Moderate:
-				log.Printf("Backpressure %s for %s - EMA: %v, P95: %v, P99: %v",
-					level, routeKey, stats.EMA, stats.P95, stats.P99)
+				logger.WarnContext(r.Context(), "backpressure detected",
+					"level", level,
+					"route", routeKey,
+					"ema", stats.EMA,
+					"p95", stats.P95,
+					"p99", stats.P99)
 
 			case floodgate.Normal:
 				circuitBreaker.RecordSuccess()

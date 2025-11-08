@@ -4,7 +4,6 @@ package grpc
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -40,6 +39,9 @@ type Config struct {
 	RetryAfterEmergency int
 	RetryAfterCritical  int
 	RetryAfterCircuit   int
+
+	// Logger for backpressure events. If nil, uses DefaultLogger.
+	Logger floodgate.Logger
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -67,6 +69,8 @@ func DefaultConfig() Config {
 		RetryAfterEmergency: 10,
 		RetryAfterCritical:  5,
 		RetryAfterCircuit:   30,
+
+		Logger: floodgate.NewDefaultLogger(),
 	}
 }
 
@@ -85,6 +89,12 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		cfg.CircuitBreakerSuccessThreshold,
 	)
 	skipMethods := cfg.SkipMethods
+
+	// Use provided logger or default
+	logger := cfg.Logger
+	if logger == nil {
+		logger = floodgate.NewDefaultLogger()
+	}
 
 	// Pre-allocate metadata to avoid allocation on hot path
 	retryAfterCircuit := md.Pairs("retry-after", fmt.Sprintf("%d", cfg.RetryAfterCircuit))
@@ -105,10 +115,14 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 					dropRate := dispatcher.DropRate()
 
 					if cacheLen > 0 || dropRate > 0 {
-						log.Printf("Backpressure metrics - cache: %d/%d (%.1f%%), dispatcher drops: %d/%d (%.2f%%), circuit: %s",
-							cacheLen, cfg.CacheSize, float64(cacheLen)/float64(cfg.CacheSize)*100,
-							dispatcher.DroppedCount(), dispatcher.TotalCount(), dropRate,
-							circuitBreaker.State())
+						logger.InfoContext(ctx, "backpressure metrics",
+							"cache_used", cacheLen,
+							"cache_size", cfg.CacheSize,
+							"cache_pct", float64(cacheLen)/float64(cfg.CacheSize)*100,
+							"drops", dispatcher.DroppedCount(),
+							"total", dispatcher.TotalCount(),
+							"drop_rate", dropRate,
+							"circuit", circuitBreaker.State())
 					}
 				}
 			}
@@ -137,7 +151,7 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 
 		if !circuitBreaker.Allow() {
 			_ = grpc.SetTrailer(ctx, retryAfterCircuit)
-			log.Printf("Circuit breaker open for %s", method)
+			logger.WarnContext(ctx, "circuit breaker open", "method", method)
 			return nil, status.Errorf(codes.Unavailable, "service circuit breaker open")
 		}
 
@@ -148,20 +162,30 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		case floodgate.Emergency:
 			circuitBreaker.RecordFailure()
 			_ = grpc.SetTrailer(ctx, retryAfterEmergency)
-			log.Printf("Backpressure emergency for %s - EMA: %v, P95: %v, P99: %v",
-				method, stats.EMA, stats.P95, stats.P99)
+			logger.ErrorContext(ctx, "backpressure emergency",
+				"method", method,
+				"ema", stats.EMA,
+				"p95", stats.P95,
+				"p99", stats.P99)
 			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - emergency backpressure")
 
 		case floodgate.Critical:
 			circuitBreaker.RecordFailure()
 			_ = grpc.SetTrailer(ctx, retryAfterCritical)
-			log.Printf("Backpressure critical for %s - EMA: %v, P95: %v, P99: %v",
-				method, stats.EMA, stats.P95, stats.P99)
+			logger.ErrorContext(ctx, "backpressure critical",
+				"method", method,
+				"ema", stats.EMA,
+				"p95", stats.P95,
+				"p99", stats.P99)
 			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - critical backpressure")
 
 		case floodgate.Warning, floodgate.Moderate:
-			log.Printf("Backpressure %s for %s - EMA: %v, P95: %v, P99: %v",
-				level, method, stats.EMA, stats.P95, stats.P99)
+			logger.WarnContext(ctx, "backpressure detected",
+				"level", level,
+				"method", method,
+				"ema", stats.EMA,
+				"p95", stats.P95,
+				"p99", stats.P99)
 
 		case floodgate.Normal:
 			circuitBreaker.RecordSuccess()
