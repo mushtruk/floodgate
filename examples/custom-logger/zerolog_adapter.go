@@ -18,34 +18,34 @@ func NewZeroLogAdapter(logger zerolog.Logger) *ZeroLogAdapter {
 }
 
 // DebugContext implements floodgate.Logger.
-func (z *ZeroLogAdapter) DebugContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+func (z *ZeroLogAdapter) DebugContext(ctx context.Context, msg string, keysAndValues ...any) {
 	event := z.logger.Debug().Ctx(ctx)
 	z.addFields(event, keysAndValues)
 	event.Msg(msg)
 }
 
 // InfoContext implements floodgate.Logger.
-func (z *ZeroLogAdapter) InfoContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+func (z *ZeroLogAdapter) InfoContext(ctx context.Context, msg string, keysAndValues ...any) {
 	event := z.logger.Info().Ctx(ctx)
 	z.addFields(event, keysAndValues)
 	event.Msg(msg)
 }
 
 // WarnContext implements floodgate.Logger.
-func (z *ZeroLogAdapter) WarnContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+func (z *ZeroLogAdapter) WarnContext(ctx context.Context, msg string, keysAndValues ...any) {
 	event := z.logger.Warn().Ctx(ctx)
 	z.addFields(event, keysAndValues)
 	event.Msg(msg)
 }
 
 // ErrorContext implements floodgate.Logger.
-func (z *ZeroLogAdapter) ErrorContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+func (z *ZeroLogAdapter) ErrorContext(ctx context.Context, msg string, keysAndValues ...any) {
 	event := z.logger.Error().Ctx(ctx)
 	z.addFields(event, keysAndValues)
 	event.Msg(msg)
 }
 
-func (z *ZeroLogAdapter) addFields(event *zerolog.Event, keysAndValues []interface{}) {
+func (z *ZeroLogAdapter) addFields(event *zerolog.Event, keysAndValues []any) {
 	for i := 0; i < len(keysAndValues); i += 2 {
 		if i+1 < len(keysAndValues) {
 			key := keysAndValues[i].(string)

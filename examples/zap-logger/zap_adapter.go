@@ -18,26 +18,26 @@ func NewZapAdapter(logger *zap.Logger) *ZapAdapter {
 }
 
 // DebugContext implements floodgate.Logger.
-func (z *ZapAdapter) DebugContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+func (z *ZapAdapter) DebugContext(ctx context.Context, msg string, keysAndValues ...any) {
 	z.logger.Debug(msg, z.toZapFields(keysAndValues)...)
 }
 
 // InfoContext implements floodgate.Logger.
-func (z *ZapAdapter) InfoContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+func (z *ZapAdapter) InfoContext(ctx context.Context, msg string, keysAndValues ...any) {
 	z.logger.Info(msg, z.toZapFields(keysAndValues)...)
 }
 
 // WarnContext implements floodgate.Logger.
-func (z *ZapAdapter) WarnContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+func (z *ZapAdapter) WarnContext(ctx context.Context, msg string, keysAndValues ...any) {
 	z.logger.Warn(msg, z.toZapFields(keysAndValues)...)
 }
 
 // ErrorContext implements floodgate.Logger.
-func (z *ZapAdapter) ErrorContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+func (z *ZapAdapter) ErrorContext(ctx context.Context, msg string, keysAndValues ...any) {
 	z.logger.Error(msg, z.toZapFields(keysAndValues)...)
 }
 
-func (z *ZapAdapter) toZapFields(keysAndValues []interface{}) []zap.Field {
+func (z *ZapAdapter) toZapFields(keysAndValues []any) []zap.Field {
 	if len(keysAndValues) == 0 {
 		return nil
 	}

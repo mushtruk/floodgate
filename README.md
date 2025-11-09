@@ -16,6 +16,7 @@ A sophisticated, production-ready Go library for adaptive backpressure and load 
 - 🔧 **Fully Configurable**: Environment-based thresholds for different deployment scenarios
 - ⚡ **High Performance**: Sub-microsecond stats evaluation, zero allocations, <3μs total overhead per request
 - 📝 **Comprehensive Metrics**: Built-in observability with structured logging
+- 🔌 **Pluggable Logging**: Context-aware logging interface compatible with any Go logging framework
 
 ## Installation
 
@@ -267,13 +268,38 @@ The gRPC and HTTP middleware log:
 - Periodic health metrics (cache usage, drop rates, circuit state)
 - Circuit breaker state changes
 
+### Configurable Logging
+
+Floodgate supports any Go logging framework through a simple interface. Use the standard library slog, or integrate with zap, zerolog, or any other logger:
+
+```go
+// Using slog (Go 1.21+, recommended)
+handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelInfo,
+})
+cfg.Logger = floodgate.NewSlogAdapter(slog.New(handler))
+
+// Using zap
+zapLogger, _ := zap.NewProduction()
+cfg.Logger = NewZapAdapter(zapLogger)
+
+// Using zerolog
+zerologLogger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+cfg.Logger = NewZeroLogAdapter(zerologLogger)
+
+// Disable logging entirely
+cfg.Logger = &floodgate.NoOpLogger{}
+```
+
+See [LOGGER.md](LOGGER.md) for complete logging documentation with examples for slog, zap, and zerolog.
+
 ### Custom Logging
 
-Integrate with your logging framework:
+Access tracker stats directly:
 
 ```go
 stats := tracker.Value()
-logger.Info("latency_stats",
+logger.InfoContext(ctx, "latency_stats",
     "ema", stats.EMA,
     "p95", stats.P95,
     "p99", stats.P99,
@@ -284,9 +310,10 @@ logger.Info("latency_stats",
 ## Examples
 
 See the [examples](examples/) directory for complete working examples:
-- [Basic Usage](examples/basic/main.go)
-- [gRPC Server](examples/grpc-server/main.go)
-- [HTTP Server](examples/http-server/main.go)
+- [Basic Usage](examples/basic/main.go) - Core latency tracking and backpressure
+- [gRPC Server](examples/grpc-server/main.go) - gRPC interceptor integration
+- [HTTP Server](examples/http-server/main.go) - HTTP middleware integration
+- [Custom Logging](LOGGER.md#examples) - Examples for slog, zap, and zerolog integration
 
 ## Testing
 
