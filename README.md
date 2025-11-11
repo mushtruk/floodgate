@@ -15,7 +15,7 @@ A sophisticated, production-ready Go library for adaptive backpressure and load 
 - 📈 **Multi-Signal Detection**: Combines EMA, slope, drift, and percentiles for accurate backpressure levels
 - 🔧 **Fully Configurable**: Environment-based thresholds for different deployment scenarios
 - ⚡ **High Performance**: Sub-microsecond stats evaluation, zero allocations, <3μs total overhead per request
-- 📝 **Comprehensive Metrics**: Built-in observability with structured logging
+- 📊 **Pluggable Metrics**: Prometheus, OpenTelemetry, or custom metrics backends
 - 🔌 **Pluggable Logging**: Context-aware logging interface compatible with any Go logging framework
 
 ## Installation
@@ -261,14 +261,38 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
 ## Observability
 
-### Built-in Metrics
+### Pluggable Metrics
 
-The gRPC and HTTP middleware log:
-- Backpressure activation events (level, method/route, latencies)
-- Periodic health metrics (cache usage, drop rates, circuit state)
-- Circuit breaker state changes
+Floodgate provides vendor-neutral metrics integration with Prometheus, OpenTelemetry, or custom backends:
 
-### Configurable Logging
+```go
+import (
+    prommetrics "github.com/mushtruk/floodgate/metrics/prometheus"
+    "github.com/prometheus/client_golang/prometheus"
+)
+
+// Create Prometheus registry
+reg := prometheus.NewRegistry()
+
+// Configure metrics
+cfg.Metrics = prommetrics.NewMetrics(reg)
+
+// Expose /metrics endpoint
+http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+```
+
+**Available Metrics**:
+- `floodgate_requests_total` - Total requests by method, level, result
+- `floodgate_requests_rejected_total` - Rejected requests by method, level
+- `floodgate_request_duration_seconds` - Latency histogram by method
+- `floodgate_circuit_breaker_state` - Circuit breaker state (0=closed, 1=open, 2=half-open)
+- `floodgate_cache_size` - Active trackers in cache
+- `floodgate_dispatcher_drops_total` - Async dispatcher drops
+- `floodgate_dispatcher_events_total` - Total dispatcher events
+
+See [METRICS.md](METRICS.md) for complete metrics documentation with Prometheus, OpenTelemetry, and custom implementations.
+
+### Pluggable Logging
 
 Floodgate supports any Go logging framework through a simple interface. Use the standard library slog, or integrate with zap, zerolog, or any other logger:
 
@@ -293,26 +317,13 @@ cfg.Logger = &floodgate.NoOpLogger{}
 
 See [LOGGER.md](LOGGER.md) for complete logging documentation with examples for slog, zap, and zerolog.
 
-### Custom Logging
-
-Access tracker stats directly:
-
-```go
-stats := tracker.Value()
-logger.InfoContext(ctx, "latency_stats",
-    "ema", stats.EMA,
-    "p95", stats.P95,
-    "p99", stats.P99,
-    "level", stats.Level(),
-)
-```
-
 ## Examples
 
 See the [examples](examples/) directory for complete working examples:
 - [Basic Usage](examples/basic/main.go) - Core latency tracking and backpressure
 - [gRPC Server](examples/grpc-server/main.go) - gRPC interceptor integration
 - [HTTP Server](examples/http-server/main.go) - HTTP middleware integration
+- [Prometheus Metrics](examples/prometheus-metrics/main.go) - HTTP server with Prometheus metrics and Grafana dashboard
 - [Custom Logging](LOGGER.md#examples) - Examples for slog, zap, and zerolog integration
 
 ## Testing

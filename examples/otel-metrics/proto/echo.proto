@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package example;
+
+option go_package = "github.com/mushtruk/floodgate/examples/otel-metrics/proto";
+
+service EchoService {
+  rpc FastEcho(EchoRequest) returns (EchoResponse);
+  rpc SlowEcho(EchoRequest) returns (EchoResponse);
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+message EchoRequest {
+  string name = 1;
+}
+
+message EchoResponse {
+  string message = 1;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+}

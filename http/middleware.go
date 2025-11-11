@@ -39,6 +39,9 @@ type Config struct {
 
 	// Logger for backpressure events. If nil, uses DefaultLogger.
 	Logger floodgate.Logger
+
+	// Metrics collector for observability. If nil, uses NoOpMetrics (disabled).
+	Metrics floodgate.MetricsCollector
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -68,7 +71,8 @@ func DefaultConfig() Config {
 		RetryAfterCritical:  5,
 		RetryAfterCircuit:   30,
 
-		Logger: floodgate.NewDefaultLogger(),
+		Logger:  floodgate.NewDefaultLogger(),
+		Metrics: &floodgate.NoOpMetrics{}, // Disabled by default
 	}
 }
 
@@ -94,6 +98,12 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 		logger = floodgate.NewDefaultLogger()
 	}
 
+	// Use provided metrics or no-op
+	metrics := cfg.Metrics
+	if metrics == nil {
+		metrics = &floodgate.NoOpMetrics{}
+	}
+
 	// Periodic metrics
 	if cfg.EnableMetrics {
 		go func() {
@@ -106,6 +116,10 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 				case <-ticker.C:
 					cacheLen := registry.Len()
 					dropRate := dispatcher.DropRate()
+
+					// Record cache and dispatcher metrics
+					metrics.RecordCacheSize(cacheLen)
+					metrics.RecordDispatcherStats(dispatcher.DroppedCount(), dispatcher.TotalCount())
 
 					if cacheLen > 0 || dropRate > 0 {
 						logger.InfoContext(ctx, "backpressure metrics",
@@ -150,12 +164,23 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 			if !circuitBreaker.Allow() {
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", cfg.RetryAfterCircuit))
 				logger.WarnContext(r.Context(), "circuit breaker open", "route", routeKey)
+				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
+
+				// Record rejected request
+				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
+					Method: routeKey,
+					Level:  floodgate.Emergency,
+					Result: "rejected",
+				}, 0, true)
+
 				http.Error(w, "Service Unavailable - circuit breaker open", http.StatusServiceUnavailable)
 				return
 			}
 
 			stats := tracker.Value()
 			level := stats.LevelWithThresholds(cfg.Thresholds)
+
+			var rejected bool
 
 			switch level {
 			case floodgate.Emergency:
@@ -166,6 +191,13 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 					"ema", stats.EMA,
 					"p95", stats.P95,
 					"p99", stats.P99)
+				rejected = true
+				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
+				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
+					Method: routeKey,
+					Level:  level,
+					Result: "rejected",
+				}, 0, true)
 				http.Error(w, "Service Unavailable - emergency backpressure", http.StatusServiceUnavailable)
 				return
 
@@ -177,6 +209,13 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 					"ema", stats.EMA,
 					"p95", stats.P95,
 					"p99", stats.P99)
+				rejected = true
+				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
+				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
+					Method: routeKey,
+					Level:  level,
+					Result: "rejected",
+				}, 0, true)
 				http.Error(w, "Service Unavailable - critical backpressure", http.StatusServiceUnavailable)
 				return
 
@@ -190,6 +229,7 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 
 			case floodgate.Normal:
 				circuitBreaker.RecordSuccess()
+				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
 			}
 
 			start := time.Now()
@@ -197,6 +237,13 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 			latency := time.Since(start)
 
 			dispatcher.Emit(tracker, latency)
+
+			// Record successful request completion
+			metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
+				Method: routeKey,
+				Level:  level,
+				Result: "success",
+			}, latency, rejected)
 		})
 	}
 }

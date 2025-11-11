@@ -42,6 +42,9 @@ type Config struct {
 
 	// Logger for backpressure events. If nil, uses DefaultLogger.
 	Logger floodgate.Logger
+
+	// Metrics collector for observability. If nil, uses NoOpMetrics (disabled).
+	Metrics floodgate.MetricsCollector
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -70,7 +73,8 @@ func DefaultConfig() Config {
 		RetryAfterCritical:  5,
 		RetryAfterCircuit:   30,
 
-		Logger: floodgate.NewDefaultLogger(),
+		Logger:  floodgate.NewDefaultLogger(),
+		Metrics: &floodgate.NoOpMetrics{}, // Disabled by default
 	}
 }
 
@@ -96,6 +100,12 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		logger = floodgate.NewDefaultLogger()
 	}
 
+	// Use provided metrics or no-op
+	metrics := cfg.Metrics
+	if metrics == nil {
+		metrics = &floodgate.NoOpMetrics{}
+	}
+
 	// Pre-allocate metadata to avoid allocation on hot path
 	retryAfterCircuit := md.Pairs("retry-after", fmt.Sprintf("%d", cfg.RetryAfterCircuit))
 	retryAfterEmergency := md.Pairs("retry-after", fmt.Sprintf("%d", cfg.RetryAfterEmergency))
@@ -113,6 +123,10 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 				case <-ticker.C:
 					cacheLen := registry.Len()
 					dropRate := dispatcher.DropRate()
+
+					// Record cache and dispatcher metrics
+					metrics.RecordCacheSize(cacheLen)
+					metrics.RecordDispatcherStats(dispatcher.DroppedCount(), dispatcher.TotalCount())
 
 					if cacheLen > 0 || dropRate > 0 {
 						logger.InfoContext(ctx, "backpressure metrics",
@@ -152,11 +166,22 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		if !circuitBreaker.Allow() {
 			_ = grpc.SetTrailer(ctx, retryAfterCircuit)
 			logger.WarnContext(ctx, "circuit breaker open", "method", method)
+			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
+
+			// Record rejected request
+			metrics.RecordRequest(ctx, floodgate.RequestLabels{
+				Method: method,
+				Level:  floodgate.Emergency,
+				Result: "rejected",
+			}, 0, true)
+
 			return nil, status.Errorf(codes.Unavailable, "service circuit breaker open")
 		}
 
 		stats := tracker.Value()
 		level := stats.LevelWithThresholds(cfg.Thresholds)
+
+		var rejected bool
 
 		switch level {
 		case floodgate.Emergency:
@@ -167,6 +192,13 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 				"ema", stats.EMA,
 				"p95", stats.P95,
 				"p99", stats.P99)
+			rejected = true
+			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
+			metrics.RecordRequest(ctx, floodgate.RequestLabels{
+				Method: method,
+				Level:  level,
+				Result: "rejected",
+			}, 0, true)
 			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - emergency backpressure")
 
 		case floodgate.Critical:
@@ -177,6 +209,13 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 				"ema", stats.EMA,
 				"p95", stats.P95,
 				"p99", stats.P99)
+			rejected = true
+			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
+			metrics.RecordRequest(ctx, floodgate.RequestLabels{
+				Method: method,
+				Level:  level,
+				Result: "rejected",
+			}, 0, true)
 			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - critical backpressure")
 
 		case floodgate.Warning, floodgate.Moderate:
@@ -189,6 +228,7 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 
 		case floodgate.Normal:
 			circuitBreaker.RecordSuccess()
+			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
 		}
 
 		start := time.Now()
@@ -196,6 +236,17 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		latency := time.Since(start)
 
 		dispatcher.Emit(tracker, latency)
+
+		// Record successful request completion
+		result := "success"
+		if err != nil {
+			result = "error"
+		}
+		metrics.RecordRequest(ctx, floodgate.RequestLabels{
+			Method: method,
+			Level:  level,
+			Result: result,
+		}, latency, rejected)
 
 		return resp, err
 	}
