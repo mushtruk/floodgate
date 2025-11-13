@@ -343,6 +343,100 @@ func main() {
 }
 ```
 
+## Datadog Integration
+
+### Installation
+
+```bash
+go get github.com/mushtruk/floodgate/metrics/datadog
+```
+
+### Full Example
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+    "time"
+
+    "github.com/DataDog/datadog-go/v5/statsd"
+    "github.com/mushtruk/floodgate"
+    bphttp "github.com/mushtruk/floodgate/http"
+    ddmetrics "github.com/mushtruk/floodgate/metrics/datadog"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Create Datadog DogStatsD client
+    client, _ := statsd.New("localhost:8125",
+        statsd.WithNamespace("myapp"),
+        statsd.WithTags([]string{"env:prod", "service:api"}),
+    )
+    defer client.Close()
+
+    // Create floodgate metrics collector
+    metrics := ddmetrics.NewMetrics(client)
+
+    // Configure backpressure
+    cfg := bphttp.DefaultConfig()
+    cfg.Metrics = metrics
+    cfg.Thresholds = floodgate.Thresholds{
+        P99Emergency: 500 * time.Millisecond,
+        P95Critical:  200 * time.Millisecond,
+        EMACritical:  100 * time.Millisecond,
+    }
+
+    // Create HTTP server
+    mux := http.NewServeMux()
+    mux.HandleFunc("/api/users", handleUsers)
+
+    // Wrap with backpressure middleware
+    handler := bphttp.Middleware(ctx, cfg)(mux)
+
+    http.ListenAndServe(":8080", handler)
+}
+```
+
+### Datadog Queries
+
+**Request rate by backpressure level:**
+```
+sum:myapp.floodgate.requests.total{*} by {level}.as_rate()
+```
+
+**Rejection rate:**
+```
+sum:myapp.floodgate.requests.rejected{*}.as_rate()
+```
+
+**P95 latency:**
+```
+p95:myapp.floodgate.request.duration{*} by {method}
+```
+
+**Circuit breaker open endpoints:**
+```
+sum:myapp.floodgate.circuit_breaker.state{state:open}
+```
+
+**Dispatcher drop rate:**
+```
+sum:myapp.floodgate.dispatcher.drops{*}.as_rate() / sum:myapp.floodgate.dispatcher.events{*}.as_rate()
+```
+
+### Alert Configuration
+
+```
+Alert name: High Backpressure Rejection Rate
+Metric: sum:myapp.floodgate.requests.rejected{*}.as_rate()
+Warning: > 5 requests/sec
+Critical: > 10 requests/sec
+Message: Backpressure rejecting {{value}} req/s on {{service.name}}
+```
+
 ## Custom Metrics Collector
 
 You can implement the `MetricsCollector` interface for any metrics backend:

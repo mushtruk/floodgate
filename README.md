@@ -263,7 +263,7 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
 ### Pluggable Metrics
 
-Floodgate provides vendor-neutral metrics integration with Prometheus, OpenTelemetry, or custom backends:
+Floodgate provides vendor-neutral metrics integration with Prometheus, OpenTelemetry, Datadog, or custom backends:
 
 ```go
 import (
@@ -290,7 +290,7 @@ http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 - `floodgate_dispatcher_drops_total` - Async dispatcher drops
 - `floodgate_dispatcher_events_total` - Total dispatcher events
 
-See [METRICS.md](METRICS.md) for complete metrics documentation with Prometheus, OpenTelemetry, and custom implementations.
+See [METRICS.md](METRICS.md) for complete metrics documentation with Prometheus, OpenTelemetry, Datadog, and custom implementations.
 
 ### Pluggable Logging
 
@@ -324,6 +324,8 @@ See the [examples](examples/) directory for complete working examples:
 - [gRPC Server](examples/grpc-server/main.go) - gRPC interceptor integration
 - [HTTP Server](examples/http-server/main.go) - HTTP middleware integration
 - [Prometheus Metrics](examples/prometheus-metrics/main.go) - HTTP server with Prometheus metrics and Grafana dashboard
+- [OpenTelemetry Metrics](examples/otel-metrics/main.go) - gRPC server with OpenTelemetry metrics
+- [Datadog Metrics](examples/datadog-metrics/main.go) - HTTP server with Datadog DogStatsD integration
 - [Custom Logging](LOGGER.md#examples) - Examples for slog, zap, and zerolog integration
 
 ## Testing
