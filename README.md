@@ -15,7 +15,8 @@ A sophisticated, production-ready Go library for adaptive backpressure and load 
 - 📈 **Multi-Signal Detection**: Combines EMA, slope, drift, and percentiles for accurate backpressure levels
 - 🔧 **Fully Configurable**: Environment-based thresholds for different deployment scenarios
 - ⚡ **High Performance**: Sub-microsecond stats evaluation, zero allocations, <3μs total overhead per request
-- 📊 **Pluggable Metrics**: Prometheus, OpenTelemetry, or custom metrics backends
+- 📊 **Pluggable Metrics**: Prometheus, OpenTelemetry, Datadog, or custom metrics backends
+- 🔍 **Distributed Tracing**: OpenTelemetry tracing for visualizing backpressure in Jaeger, Zipkin, or APM tools
 - 🔌 **Pluggable Logging**: Context-aware logging interface compatible with any Go logging framework
 
 ## Installation
@@ -326,6 +327,7 @@ See the [examples](examples/) directory for complete working examples:
 - [Prometheus Metrics](examples/prometheus-metrics/main.go) - HTTP server with Prometheus metrics and Grafana dashboard
 - [OpenTelemetry Metrics](examples/otel-metrics/main.go) - gRPC server with OpenTelemetry metrics
 - [Datadog Metrics](examples/datadog-metrics/main.go) - HTTP server with Datadog DogStatsD integration
+- [Distributed Tracing](examples/tracing-jaeger/main.go) - Jaeger integration for visualizing backpressure in traces
 - [Custom Logging](LOGGER.md#examples) - Examples for slog, zap, and zerolog integration
 
 ## Testing
