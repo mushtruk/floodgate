@@ -5,11 +5,15 @@ import (
 	"time"
 )
 
+// CircuitState represents the current state of a circuit breaker.
 type CircuitState int
 
 const (
+	// StateClosed indicates the circuit breaker is closed and requests flow through.
 	StateClosed CircuitState = iota
+	// StateOpen indicates the circuit breaker is open and requests are rejected.
 	StateOpen
+	// StateHalfOpen indicates the circuit breaker is testing if the service has recovered.
 	StateHalfOpen
 )
 
@@ -41,6 +45,7 @@ type CircuitBreaker struct {
 	minTimeBetweenOps time.Duration
 }
 
+// NewCircuitBreaker creates a new circuit breaker with the specified configuration.
 func NewCircuitBreaker(maxFailures int, timeout time.Duration, successThreshold int) *CircuitBreaker {
 	return &CircuitBreaker{
 		state:             StateClosed,
@@ -52,6 +57,7 @@ func NewCircuitBreaker(maxFailures int, timeout time.Duration, successThreshold 
 	}
 }
 
+// Allow checks if a request should be allowed through the circuit breaker.
 func (cb *CircuitBreaker) Allow() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -80,6 +86,7 @@ func (cb *CircuitBreaker) Allow() bool {
 	}
 }
 
+// RecordSuccess records a successful request, which may close the circuit breaker.
 func (cb *CircuitBreaker) RecordSuccess() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -103,6 +110,7 @@ func (cb *CircuitBreaker) RecordSuccess() {
 	}
 }
 
+// RecordFailure records a failed request, which may open the circuit breaker.
 func (cb *CircuitBreaker) RecordFailure() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -127,12 +135,14 @@ func (cb *CircuitBreaker) RecordFailure() {
 	}
 }
 
+// State returns the current state of the circuit breaker.
 func (cb *CircuitBreaker) State() CircuitState {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
 	return cb.state
 }
 
+// Reset resets the circuit breaker to its initial closed state.
 func (cb *CircuitBreaker) Reset() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()

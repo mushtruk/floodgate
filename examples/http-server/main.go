@@ -1,3 +1,4 @@
+// Package main demonstrates HTTP backpressure middleware usage.
 package main
 
 import (
@@ -30,31 +31,31 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register handlers
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "OK")
+		_, _ = fmt.Fprintf(w, "OK")
 	})
 
-	mux.HandleFunc("/api/fast", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/fast", func(w http.ResponseWriter, _ *http.Request) {
 		// Fast endpoint
-		time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
+		time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond) //nolint:gosec // Weak random is fine for demo latency
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Fast response")
+		_, _ = fmt.Fprintf(w, "Fast response")
 	})
 
-	mux.HandleFunc("/api/slow", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/slow", func(w http.ResponseWriter, _ *http.Request) {
 		// Slow endpoint that might trigger backpressure
-		time.Sleep(time.Duration(50+rand.Intn(200)) * time.Millisecond)
+		time.Sleep(time.Duration(50+rand.Intn(200)) * time.Millisecond) //nolint:gosec // Weak random is fine for demo latency
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Slow response")
+		_, _ = fmt.Fprintf(w, "Slow response")
 	})
 
-	mux.HandleFunc("/api/variable", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/variable", func(w http.ResponseWriter, _ *http.Request) {
 		// Variable latency endpoint
-		latency := rand.Intn(300)
+		latency := rand.Intn(300) //nolint:gosec // Weak random is fine for demo latency
 		time.Sleep(time.Duration(latency) * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Variable response (latency: %dms)", latency)
+		_, _ = fmt.Fprintf(w, "Variable response (latency: %dms)", latency)
 	})
 
 	// Wrap with backpressure middleware
@@ -62,8 +63,9 @@ func main() {
 
 	// Create server
 	server := &http.Server{
-		Addr:    ":8080",
-		Handler: handler,
+		Addr:              ":8080",
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	// Start server
@@ -92,11 +94,12 @@ func main() {
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server shutdown failed: %v", err)
+		shutdownCancel()
+		log.Fatalf("Server shutdown failed: %v", err) //nolint:gocritic // Intentional exit after fatal error
 	}
+	shutdownCancel()
 
 	log.Println("Server stopped")
 }

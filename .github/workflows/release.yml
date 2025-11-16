@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Extract tag name
+        id: tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Get tag message
+        id: tag_message
+        run: |
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' ${{ steps.tag.outputs.TAG }})
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAG_MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREVIOUS_TAG=$(git describe --abbrev=0 --tags $(git rev-list --tags --skip=1 --max-count=1) 2>/dev/null || echo "")
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" ${{ steps.tag.outputs.TAG }})
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..${{ steps.tag.outputs.TAG }})
+          fi
+
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG }}
+          name: Release ${{ steps.tag.outputs.TAG }}
+          body: |
+            ${{ steps.tag_message.outputs.message }}
+
+            ## Commits
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## Installation
+
+            ```bash
+            go get github.com/mushtruk/floodgate@${{ steps.tag.outputs.TAG }}
+            ```
+
+            ## Verification
+
+            All tests passed ✅
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-module-install:
+    name: Test Module Installation
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Extract tag name
+        id: tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Test installation
+        run: |
+          mkdir -p /tmp/test-install
+          cd /tmp/test-install
+          go mod init test
+
+          # Wait a bit for pkg.go.dev to index
+          sleep 30
+
+          # Try to install the module
+          go get github.com/mushtruk/floodgate@${{ steps.tag.outputs.TAG }} || echo "Module not yet available on proxy, this is expected"
+
+  notify:
+    name: Notify on Release
+    runs-on: ubuntu-latest
+    needs: release
+    if: success()
+    steps:
+      - name: Extract tag name
+        id: tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Summary
+        run: |
+          echo "## Release ${{ steps.tag.outputs.TAG }} Published! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The release has been created successfully." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "- Check the release notes: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Module will be available on pkg.go.dev shortly" >> $GITHUB_STEP_SUMMARY
+          echo "- Consider announcing the release" >> $GITHUB_STEP_SUMMARY

@@ -4,10 +4,15 @@ package floodgate
 type Level int
 
 const (
+	// Normal indicates no backpressure.
 	Normal Level = iota
+	// Warning indicates early signs of backpressure.
 	Warning
+	// Moderate indicates noticeable backpressure.
 	Moderate
+	// Critical indicates severe backpressure.
 	Critical
+	// Emergency indicates extreme backpressure requiring immediate action.
 	Emergency
 )
 

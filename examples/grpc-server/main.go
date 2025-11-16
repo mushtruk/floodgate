@@ -1,3 +1,4 @@
+// Package main demonstrates gRPC backpressure interceptor usage.
 package main
 
 import (
@@ -33,7 +34,7 @@ func main() {
 	// Register your services here
 	// pb.RegisterYourServiceServer(server, &yourService{})
 
-	lis, err := net.Listen("tcp", ":50051")
+	lis, err := net.Listen("tcp", ":50051") //nolint:gosec // Example server binding to all interfaces
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err) // In production, handle gracefully
 	}

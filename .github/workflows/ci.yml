@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.23', '1.24']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.24'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: false
+
+  test-metrics-packages:
+    name: Test Metrics Packages
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package:
+          - prometheus
+          - opentelemetry
+          - datadog
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Test ${{ matrix.package }}
+        working-directory: ./metrics/${{ matrix.package }}
+        run: |
+          go mod download
+          go test -v -race -coverprofile=coverage.out ./...
+
+  test-examples:
+    name: Build Examples
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        example:
+          - grpc-backpressure
+          - http-backpressure
+          - configurable-logging
+          - prometheus-metrics
+          - opentelemetry-metrics
+          - datadog-metrics
+          - tracing-jaeger
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build ${{ matrix.example }}
+        working-directory: ./examples/${{ matrix.example }}
+        run: |
+          go mod download
+          go build -v .
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run integration tests
+        run: |
+          # Run tests with integration tag if they exist
+          if go list -tags=integration ./... | grep -q .; then
+            go test -v -race -tags=integration ./...
+          else
+            echo "No integration tests found, skipping"
+          fi
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum

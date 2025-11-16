@@ -1,3 +1,4 @@
+// Package main demonstrates basic backpressure usage.
 package main
 
 import (

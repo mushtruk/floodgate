@@ -6,10 +6,12 @@ import (
 	"sync/atomic"
 )
 
+// Observer processes values asynchronously via the dispatcher.
 type Observer[T any] interface {
 	Process(T)
 }
 
+// Event represents a value to be processed by an observer.
 type Event[T any] struct {
 	Target Observer[T]
 	Value  T
@@ -22,6 +24,7 @@ type Dispatcher[T any] struct {
 	totalCount   atomic.Uint64
 }
 
+// NewDispatcher creates a new dispatcher with the specified buffer size.
 func NewDispatcher[T any](ctx context.Context, bufSize int) *Dispatcher[T] {
 	d := &Dispatcher[T]{
 		inputCh: make(chan Event[T], bufSize),
@@ -46,14 +49,17 @@ func (d *Dispatcher[T]) Emit(target Observer[T], value T) {
 	}
 }
 
+// DroppedCount returns the total number of dropped events.
 func (d *Dispatcher[T]) DroppedCount() uint64 {
 	return d.droppedCount.Load()
 }
 
+// TotalCount returns the total number of events submitted.
 func (d *Dispatcher[T]) TotalCount() uint64 {
 	return d.totalCount.Load()
 }
 
+// DropRate returns the percentage of dropped events.
 func (d *Dispatcher[T]) DropRate() float64 {
 	total := d.totalCount.Load()
 	if total == 0 {

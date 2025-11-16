@@ -12,11 +12,13 @@ import (
 
 const scale = 1024
 
+// Tracker is a generic interface for processing values and computing statistics.
 type Tracker[T, V any] interface {
 	Process(T)
 	Value() V
 }
 
+// Stats contains latency statistics including EMA, slope, drift, and percentiles.
 type Stats struct {
 	EMA          time.Duration
 	Slope        time.Duration
@@ -28,6 +30,7 @@ type Stats struct {
 	P99 time.Duration
 }
 
+// Thresholds defines latency thresholds for different backpressure levels.
 type Thresholds struct {
 	P99Emergency time.Duration
 	P95Critical  time.Duration
@@ -37,6 +40,7 @@ type Thresholds struct {
 	SlopeWarning time.Duration
 }
 
+// DefaultThresholds returns the default threshold configuration.
 func DefaultThresholds() Thresholds {
 	return Thresholds{
 		P99Emergency: 10 * time.Second,
@@ -77,6 +81,7 @@ type emaTracker struct {
 	percentileMu sync.RWMutex
 }
 
+// NewTracker creates a new latency tracker with the given options.
 func NewTracker(opts ...Option) Tracker[time.Duration, Stats] {
 	t := &emaTracker{
 		alpha:             256,
@@ -241,7 +246,8 @@ func (t *emaTracker) calculatePercentiles() (p50, p95, p99 time.Duration) {
 
 // partialSort sorts the data using Go's optimized sort.
 // We keep this as a separate function for future optimization opportunities.
-func partialSort(data []int64, k int) {
+// The k parameter is currently unused but reserved for future partial sorting optimizations.
+func partialSort(data []int64, _ int) {
 	// Use sort.Slice - it uses pdqsort (pattern-defeating quicksort) which is
 	// highly optimized for various data patterns. For P99 percentiles, we need
 	// 99% of the data sorted anyway, so partial sorting doesn't help much.

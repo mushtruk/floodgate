@@ -49,16 +49,16 @@ type Logger interface {
 type NoOpLogger struct{}
 
 // DebugContext implements Logger.
-func (NoOpLogger) DebugContext(ctx context.Context, msg string, keysAndValues ...any) {}
+func (NoOpLogger) DebugContext(_ context.Context, _ string, _ ...any) {}
 
 // InfoContext implements Logger.
-func (NoOpLogger) InfoContext(ctx context.Context, msg string, keysAndValues ...any) {}
+func (NoOpLogger) InfoContext(_ context.Context, _ string, _ ...any) {}
 
 // WarnContext implements Logger.
-func (NoOpLogger) WarnContext(ctx context.Context, msg string, keysAndValues ...any) {}
+func (NoOpLogger) WarnContext(_ context.Context, _ string, _ ...any) {}
 
 // ErrorContext implements Logger.
-func (NoOpLogger) ErrorContext(ctx context.Context, msg string, keysAndValues ...any) {}
+func (NoOpLogger) ErrorContext(_ context.Context, _ string, _ ...any) {}
 
 // DefaultLogger is a simple logger that writes to stderr using the standard library.
 // For production use, consider using NewSlogAdapter() instead for better performance
@@ -75,22 +75,22 @@ func NewDefaultLogger() *DefaultLogger {
 }
 
 // DebugContext implements Logger.
-func (l *DefaultLogger) DebugContext(ctx context.Context, msg string, keysAndValues ...any) {
+func (l *DefaultLogger) DebugContext(_ context.Context, msg string, keysAndValues ...any) {
 	l.log("DEBUG", msg, keysAndValues...)
 }
 
 // InfoContext implements Logger.
-func (l *DefaultLogger) InfoContext(ctx context.Context, msg string, keysAndValues ...any) {
+func (l *DefaultLogger) InfoContext(_ context.Context, msg string, keysAndValues ...any) {
 	l.log("INFO", msg, keysAndValues...)
 }
 
 // WarnContext implements Logger.
-func (l *DefaultLogger) WarnContext(ctx context.Context, msg string, keysAndValues ...any) {
+func (l *DefaultLogger) WarnContext(_ context.Context, msg string, keysAndValues ...any) {
 	l.log("WARN", msg, keysAndValues...)
 }
 
 // ErrorContext implements Logger.
-func (l *DefaultLogger) ErrorContext(ctx context.Context, msg string, keysAndValues ...any) {
+func (l *DefaultLogger) ErrorContext(_ context.Context, msg string, keysAndValues ...any) {
 	l.log("ERROR", msg, keysAndValues...)
 }
 

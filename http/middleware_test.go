@@ -10,24 +10,24 @@ import (
 	"github.com/mushtruk/floodgate"
 )
 
-// Mock handler for testing
+// Mock handler for testing.
 func mockHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(1 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 }
 
 func mockSlowHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 }
 
-// BenchmarkMiddleware_NormalPath benchmarks the happy path with normal latency
+// BenchmarkMiddleware_NormalPath benchmarks the happy path with normal latency.
 func BenchmarkMiddleware_NormalPath(b *testing.B) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
@@ -45,7 +45,7 @@ func BenchmarkMiddleware_NormalPath(b *testing.B) {
 	}
 }
 
-// BenchmarkMiddleware_SkippedPath benchmarks skipped paths (health checks)
+// BenchmarkMiddleware_SkippedPath benchmarks skipped paths (health checks).
 func BenchmarkMiddleware_SkippedPath(b *testing.B) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
@@ -63,7 +63,7 @@ func BenchmarkMiddleware_SkippedPath(b *testing.B) {
 	}
 }
 
-// BenchmarkMiddleware_MultipleRoutesConcurrent benchmarks multiple routes concurrently
+// BenchmarkMiddleware_MultipleRoutesConcurrent benchmarks multiple routes concurrently.
 func BenchmarkMiddleware_MultipleRoutesConcurrent(b *testing.B) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
@@ -94,7 +94,7 @@ func BenchmarkMiddleware_MultipleRoutesConcurrent(b *testing.B) {
 	})
 }
 
-// BenchmarkMiddleware_EmergencyRejection benchmarks rejection path during emergency
+// BenchmarkMiddleware_EmergencyRejection benchmarks rejection path during emergency.
 func BenchmarkMiddleware_EmergencyRejection(b *testing.B) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
@@ -129,7 +129,7 @@ func BenchmarkMiddleware_EmergencyRejection(b *testing.B) {
 	}
 }
 
-// BenchmarkMiddleware_NewRouteCreation benchmarks tracker creation for new routes
+// BenchmarkMiddleware_NewRouteCreation benchmarks tracker creation for new routes.
 func BenchmarkMiddleware_NewRouteCreation(b *testing.B) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
@@ -147,7 +147,7 @@ func BenchmarkMiddleware_NewRouteCreation(b *testing.B) {
 	}
 }
 
-// BenchmarkMiddleware_StatsEvaluation benchmarks just the stats evaluation and level check
+// BenchmarkMiddleware_StatsEvaluation benchmarks just the stats evaluation and level check.
 func BenchmarkMiddleware_StatsEvaluation(b *testing.B) {
 	tracker := floodgate.NewTracker(
 		floodgate.WithAlpha(0.1),
@@ -171,7 +171,7 @@ func BenchmarkMiddleware_StatsEvaluation(b *testing.B) {
 	}
 }
 
-// BenchmarkConfig_Default benchmarks default config creation
+// BenchmarkConfig_Default benchmarks default config creation.
 func BenchmarkConfig_Default(b *testing.B) {
 	b.ReportAllocs()
 
@@ -180,7 +180,7 @@ func BenchmarkConfig_Default(b *testing.B) {
 	}
 }
 
-// Test to ensure middleware works correctly
+// Test to ensure middleware works correctly.
 func TestMiddleware_BasicFlow(t *testing.T) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
@@ -201,7 +201,7 @@ func TestMiddleware_BasicFlow(t *testing.T) {
 	}
 }
 
-// Test to ensure skipped paths bypass tracking
+// Test to ensure skipped paths bypass tracking.
 func TestMiddleware_SkipPaths(t *testing.T) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
@@ -237,8 +237,8 @@ func TestMiddleware_SkipPaths(t *testing.T) {
 	}
 }
 
-// Test circuit breaker integration
-func TestMiddleware_CircuitBreaker(t *testing.T) {
+// Test circuit breaker integration.
+func TestMiddleware_CircuitBreaker(_ *testing.T) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
 	cfg.EnableMetrics = false
@@ -269,7 +269,7 @@ func TestMiddleware_CircuitBreaker(t *testing.T) {
 	handler.ServeHTTP(w, req)
 }
 
-// Test different HTTP methods are tracked separately
+// Test different HTTP methods are tracked separately.
 func TestMiddleware_MethodSeparation(t *testing.T) {
 	ctx := context.Background()
 	cfg := DefaultConfig()
@@ -291,7 +291,7 @@ func TestMiddleware_MethodSeparation(t *testing.T) {
 	}
 }
 
-// Test retry-after header is set during backpressure
+// Test retry-after header is set during backpressure.
 func TestMiddleware_RetryAfterHeader(t *testing.T) {
 	ctx := context.Background()
 	cfg := DefaultConfig()

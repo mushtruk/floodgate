@@ -77,6 +77,8 @@ func DefaultConfig() Config {
 }
 
 // Middleware creates an HTTP middleware with adaptive backpressure.
+//
+//nolint:gocognit // Middleware requires higher complexity for request lifecycle management
 func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler {
 	registry := expirable.NewLRU[string, floodgate.Tracker[time.Duration, floodgate.Stats]](
 		cfg.CacheSize,
@@ -191,7 +193,6 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 					"ema", stats.EMA,
 					"p95", stats.P95,
 					"p99", stats.P99)
-				rejected = true
 				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
 				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
 					Method: routeKey,
@@ -209,7 +210,6 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 					"ema", stats.EMA,
 					"p95", stats.P95,
 					"p99", stats.P99)
-				rejected = true
 				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
 				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
 					Method: routeKey,

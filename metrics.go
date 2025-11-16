@@ -27,10 +27,10 @@ import (
 //	cfg.Metrics = &floodgate.NoOpMetrics{}
 //
 // The metrics collector records four key categories of backpressure observability:
-// - Request outcomes (accepted/rejected, latency, backpressure level)
-// - Circuit breaker state transitions
-// - Cache utilization (active trackers)
-// - Dispatcher performance (async processing drops)
+//   - Request outcomes (accepted/rejected, latency, backpressure level)
+//   - Circuit breaker state transitions
+//   - Cache utilization (active trackers)
+//   - Dispatcher performance (async processing drops).
 type MetricsCollector interface {
 	// RecordRequest records a completed request with its outcome.
 	// This is called for every request processed by the middleware.
@@ -108,14 +108,14 @@ type RequestLabels struct {
 type NoOpMetrics struct{}
 
 // RecordRequest implements MetricsCollector.
-func (NoOpMetrics) RecordRequest(ctx context.Context, labels RequestLabels, latency time.Duration, rejected bool) {
+func (NoOpMetrics) RecordRequest(_ context.Context, _ RequestLabels, _ time.Duration, _ bool) {
 }
 
 // RecordCircuitBreakerState implements MetricsCollector.
-func (NoOpMetrics) RecordCircuitBreakerState(method string, state CircuitState) {}
+func (NoOpMetrics) RecordCircuitBreakerState(_ string, _ CircuitState) {}
 
 // RecordCacheSize implements MetricsCollector.
-func (NoOpMetrics) RecordCacheSize(size int) {}
+func (NoOpMetrics) RecordCacheSize(_ int) {}
 
 // RecordDispatcherStats implements MetricsCollector.
-func (NoOpMetrics) RecordDispatcherStats(dropped, total uint64) {}
+func (NoOpMetrics) RecordDispatcherStats(_, _ uint64) {}

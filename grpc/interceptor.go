@@ -192,7 +192,6 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 				"ema", stats.EMA,
 				"p95", stats.P95,
 				"p99", stats.P99)
-			rejected = true
 			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
 			metrics.RecordRequest(ctx, floodgate.RequestLabels{
 				Method: method,
@@ -209,7 +208,6 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 				"ema", stats.EMA,
 				"p95", stats.P95,
 				"p99", stats.P99)
-			rejected = true
 			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
 			metrics.RecordRequest(ctx, floodgate.RequestLabels{
 				Method: method,

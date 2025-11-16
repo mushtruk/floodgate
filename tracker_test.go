@@ -123,8 +123,8 @@ func BenchmarkTracker_Value(b *testing.B) {
 	}
 }
 
-// BenchmarkTracker_ValueWithLargePercentiles benchmarks Value() with large sample size
-// This measures the optimization of using pre-allocated sortBuffer
+// BenchmarkTracker_ValueWithLargePercentiles benchmarks Value() with large sample size.
+// This measures the optimization of using pre-allocated sortBuffer.
 func BenchmarkTracker_ValueWithLargePercentiles(b *testing.B) {
 	tracker := NewTracker(
 		WithAlpha(0.1),
@@ -144,7 +144,7 @@ func BenchmarkTracker_ValueWithLargePercentiles(b *testing.B) {
 	}
 }
 
-// BenchmarkTracker_ValueNoPercentiles benchmarks Value() without percentile tracking
+// BenchmarkTracker_ValueNoPercentiles benchmarks Value() without percentile tracking.
 func BenchmarkTracker_ValueNoPercentiles(b *testing.B) {
 	tracker := NewTracker(
 		WithAlpha(0.25),
@@ -163,7 +163,7 @@ func BenchmarkTracker_ValueNoPercentiles(b *testing.B) {
 	}
 }
 
-// BenchmarkTracker_ConcurrentProcessAndValue benchmarks concurrent Process and Value calls
+// BenchmarkTracker_ConcurrentProcessAndValue benchmarks concurrent Process and Value calls.
 func BenchmarkTracker_ConcurrentProcessAndValue(b *testing.B) {
 	tracker := NewTracker(
 		WithAlpha(0.1),
@@ -192,7 +192,7 @@ func BenchmarkTracker_ConcurrentProcessAndValue(b *testing.B) {
 	})
 }
 
-// BenchmarkTracker_LevelWithThresholds benchmarks level calculation
+// BenchmarkTracker_LevelWithThresholds benchmarks level calculation.
 func BenchmarkTracker_LevelWithThresholds(b *testing.B) {
 	stats := Stats{
 		EMA:   500 * time.Millisecond,
