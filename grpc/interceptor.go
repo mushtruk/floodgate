@@ -45,6 +45,15 @@ type Config struct {
 
 	// Metrics collector for observability. If nil, uses NoOpMetrics (disabled).
 	Metrics floodgate.MetricsCollector
+
+	// Algorithm determines backpressure decisions (optional).
+	// If nil, uses ThresholdAlgorithm with cfg.Thresholds.
+	//
+	// Examples:
+	//   cfg.Algorithm = nil  // Use default thresholds (backward compatible)
+	//   cfg.Algorithm = floodgate.NewThresholdAlgorithm(customThresholds)
+	//   cfg.Algorithm = codel.NewAlgorithm()
+	Algorithm floodgate.Algorithm
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -73,12 +82,15 @@ func DefaultConfig() Config {
 		RetryAfterCritical:  5,
 		RetryAfterCircuit:   30,
 
-		Logger:  floodgate.NewDefaultLogger(),
-		Metrics: &floodgate.NoOpMetrics{}, // Disabled by default
+		Logger:    floodgate.NewDefaultLogger(),
+		Metrics:   &floodgate.NoOpMetrics{}, // Disabled by default
+		Algorithm: nil,                      // nil = use threshold-based (backward compatible)
 	}
 }
 
 // UnaryServerInterceptor creates a gRPC unary server interceptor with adaptive backpressure.
+//
+//nolint:gocognit // Interceptor requires higher complexity for request lifecycle management
 func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInterceptor {
 	registry := expirable.NewLRU[string, floodgate.Tracker[time.Duration, floodgate.Stats]](
 		cfg.CacheSize,
@@ -104,6 +116,12 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 	metrics := cfg.Metrics
 	if metrics == nil {
 		metrics = &floodgate.NoOpMetrics{}
+	}
+
+	// Use provided algorithm or default to threshold-based
+	algo := cfg.Algorithm
+	if algo == nil {
+		algo = floodgate.NewThresholdAlgorithm(cfg.Thresholds)
 	}
 
 	// Pre-allocate metadata to avoid allocation on hot path
@@ -179,46 +197,44 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		}
 
 		stats := tracker.Value()
-		level := stats.LevelWithThresholds(cfg.Thresholds)
+		decision := algo.Decide(stats)
 
 		var rejected bool
 
-		switch level {
-		case floodgate.Emergency:
+		// Check if algorithm decided to reject
+		if decision.Reject {
+			var retryAfter md.MD
+			switch decision.Level {
+			case floodgate.Emergency:
+				retryAfter = retryAfterEmergency
+			case floodgate.Critical:
+				retryAfter = retryAfterCritical
+			default:
+				retryAfter = retryAfterEmergency
+			}
+
 			circuitBreaker.RecordFailure()
-			_ = grpc.SetTrailer(ctx, retryAfterEmergency)
-			logger.ErrorContext(ctx, "backpressure emergency",
+			_ = grpc.SetTrailer(ctx, retryAfter)
+			logger.ErrorContext(ctx, "backpressure rejection",
 				"method", method,
+				"level", decision.Level,
 				"ema", stats.EMA,
 				"p95", stats.P95,
 				"p99", stats.P99)
 			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
 			metrics.RecordRequest(ctx, floodgate.RequestLabels{
 				Method: method,
-				Level:  level,
+				Level:  decision.Level,
 				Result: "rejected",
 			}, 0, true)
-			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - emergency backpressure")
+			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - %s backpressure", decision.Level)
+		}
 
-		case floodgate.Critical:
-			circuitBreaker.RecordFailure()
-			_ = grpc.SetTrailer(ctx, retryAfterCritical)
-			logger.ErrorContext(ctx, "backpressure critical",
-				"method", method,
-				"ema", stats.EMA,
-				"p95", stats.P95,
-				"p99", stats.P99)
-			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
-			metrics.RecordRequest(ctx, floodgate.RequestLabels{
-				Method: method,
-				Level:  level,
-				Result: "rejected",
-			}, 0, true)
-			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - critical backpressure")
-
+		// Log warnings for elevated backpressure (not rejecting)
+		switch decision.Level {
 		case floodgate.Warning, floodgate.Moderate:
 			logger.WarnContext(ctx, "backpressure detected",
-				"level", level,
+				"level", decision.Level,
 				"method", method,
 				"ema", stats.EMA,
 				"p95", stats.P95,
@@ -242,7 +258,7 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		}
 		metrics.RecordRequest(ctx, floodgate.RequestLabels{
 			Method: method,
-			Level:  level,
+			Level:  decision.Level,
 			Result: result,
 		}, latency, rejected)
 

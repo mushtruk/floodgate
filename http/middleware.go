@@ -42,6 +42,15 @@ type Config struct {
 
 	// Metrics collector for observability. If nil, uses NoOpMetrics (disabled).
 	Metrics floodgate.MetricsCollector
+
+	// Algorithm determines backpressure decisions (optional).
+	// If nil, uses ThresholdAlgorithm with cfg.Thresholds.
+	//
+	// Examples:
+	//   cfg.Algorithm = nil  // Use default thresholds (backward compatible)
+	//   cfg.Algorithm = floodgate.NewThresholdAlgorithm(customThresholds)
+	//   cfg.Algorithm = codel.NewAlgorithm()
+	Algorithm floodgate.Algorithm
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -71,8 +80,9 @@ func DefaultConfig() Config {
 		RetryAfterCritical:  5,
 		RetryAfterCircuit:   30,
 
-		Logger:  floodgate.NewDefaultLogger(),
-		Metrics: &floodgate.NoOpMetrics{}, // Disabled by default
+		Logger:    floodgate.NewDefaultLogger(),
+		Metrics:   &floodgate.NoOpMetrics{}, // Disabled by default
+		Algorithm: nil,                      // nil = use threshold-based (backward compatible)
 	}
 }
 
@@ -104,6 +114,12 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 	metrics := cfg.Metrics
 	if metrics == nil {
 		metrics = &floodgate.NoOpMetrics{}
+	}
+
+	// Use provided algorithm or default to threshold-based
+	algo := cfg.Algorithm
+	if algo == nil {
+		algo = floodgate.NewThresholdAlgorithm(cfg.Thresholds)
 	}
 
 	// Periodic metrics
@@ -180,48 +196,45 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 			}
 
 			stats := tracker.Value()
-			level := stats.LevelWithThresholds(cfg.Thresholds)
+			decision := algo.Decide(stats)
 
 			var rejected bool
 
-			switch level {
-			case floodgate.Emergency:
+			// Check if algorithm decided to reject
+			if decision.Reject {
+				var retryAfter int
+				switch decision.Level {
+				case floodgate.Emergency:
+					retryAfter = cfg.RetryAfterEmergency
+				case floodgate.Critical:
+					retryAfter = cfg.RetryAfterCritical
+				default:
+					retryAfter = cfg.RetryAfterEmergency
+				}
+
 				circuitBreaker.RecordFailure()
-				w.Header().Set("Retry-After", fmt.Sprintf("%d", cfg.RetryAfterEmergency))
-				logger.ErrorContext(r.Context(), "backpressure emergency",
+				w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
+				logger.ErrorContext(r.Context(), "backpressure rejection",
 					"route", routeKey,
+					"level", decision.Level,
 					"ema", stats.EMA,
 					"p95", stats.P95,
 					"p99", stats.P99)
 				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
 				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
 					Method: routeKey,
-					Level:  level,
+					Level:  decision.Level,
 					Result: "rejected",
 				}, 0, true)
-				http.Error(w, "Service Unavailable - emergency backpressure", http.StatusServiceUnavailable)
+				http.Error(w, fmt.Sprintf("Service Unavailable - %s backpressure", decision.Level), http.StatusServiceUnavailable)
 				return
+			}
 
-			case floodgate.Critical:
-				circuitBreaker.RecordFailure()
-				w.Header().Set("Retry-After", fmt.Sprintf("%d", cfg.RetryAfterCritical))
-				logger.ErrorContext(r.Context(), "backpressure critical",
-					"route", routeKey,
-					"ema", stats.EMA,
-					"p95", stats.P95,
-					"p99", stats.P99)
-				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
-				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
-					Method: routeKey,
-					Level:  level,
-					Result: "rejected",
-				}, 0, true)
-				http.Error(w, "Service Unavailable - critical backpressure", http.StatusServiceUnavailable)
-				return
-
+			// Log warnings for elevated backpressure (not rejecting)
+			switch decision.Level {
 			case floodgate.Warning, floodgate.Moderate:
 				logger.WarnContext(r.Context(), "backpressure detected",
-					"level", level,
+					"level", decision.Level,
 					"route", routeKey,
 					"ema", stats.EMA,
 					"p95", stats.P95,
@@ -241,7 +254,7 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 			// Record successful request completion
 			metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
 				Method: routeKey,
-				Level:  level,
+				Level:  decision.Level,
 				Result: "success",
 			}, latency, rejected)
 		})
