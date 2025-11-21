@@ -43,7 +43,7 @@ var sqrtLookup = [101]float64{
 //  1. Measuring sojourn time (how long requests are delayed)
 //  2. Comparing to a target delay (default 5ms)
 //  3. Entering "dropping mode" if delay exceeds target for an interval
-//  4. Dropping at increasing rates using a control law
+//  4. Drop interval decreases with sqrt(count), increasing drop frequency using a control law
 //
 // The algorithm is self-tuning and adapts to network conditions automatically.
 type Algorithm struct {

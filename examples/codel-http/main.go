@@ -8,7 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,6 +20,8 @@ import (
 )
 
 func main() {
+	// math/rand/v2 doesn't require seeding - automatically seeded
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -62,8 +64,8 @@ func main() {
 
 	// Variable endpoint - simulates bursty workload
 	mux.HandleFunc("/variable", func(w http.ResponseWriter, _ *http.Request) {
-		// Random latency: 1-50ms
-		latency := time.Duration(1+rand.Intn(50)) * time.Millisecond
+		// Random latency: 1-50ms (using math/rand for demo simplicity)
+		latency := time.Duration(1+rand.IntN(50)) * time.Millisecond //nolint:gosec // Demo code, not security-sensitive
 		time.Sleep(latency)
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintf(w, "Variable response (latency: %v)", latency)
@@ -123,11 +125,13 @@ func main() {
 
 	// Graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server shutdown error: %v", err)
+		log.Printf("Server shutdown error: %v", err)
+		shutdownCancel()
+		os.Exit(1) //nolint:gocritic // Acceptable for example code to exit on shutdown error
 	}
 
+	shutdownCancel()
 	log.Println("Server stopped")
 }

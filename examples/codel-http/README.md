@@ -110,18 +110,18 @@ cfg.Algorithm = nil  // Use default ThresholdAlgorithm
 |--------|---------------------|-----------------|
 | Configuration | Requires manual threshold tuning | Self-tuning, minimal config |
 | Adaptability | Fixed thresholds | Adapts to conditions |
-| Performance | ~5 ns/op | ~70 ns/op |
+| Performance | ~5.5 ns/op | ~59 ns/op |
 | Best for | Predictable workloads | Variable/bursty workloads |
 | Tail latency | Good with proper tuning | Excellent, automatic |
 
 ## Performance Impact
 
 CoDel algorithm overhead:
-- **70 ns/op** per request decision
+- **59 ns/op** per request decision
 - **Zero heap allocations**
-- At 1M req/s: ~70ms total CPU time
+- At 1M req/s: ~59ms total CPU time
 
-The performance difference vs threshold algorithm (5ns vs 70ns) is negligible for most applications.
+The performance difference vs threshold algorithm (5.5ns vs 59ns) is negligible for most applications.
 
 ## References
 

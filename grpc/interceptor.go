@@ -210,6 +210,8 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 			case floodgate.Critical:
 				retryAfter = retryAfterCritical
 			default:
+				// For custom algorithms that reject at other levels (Warning/Moderate),
+				// use Emergency retry time as a conservative default
 				retryAfter = retryAfterEmergency
 			}
 
@@ -217,7 +219,7 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 			_ = grpc.SetTrailer(ctx, retryAfter)
 			logger.ErrorContext(ctx, "backpressure rejection",
 				"method", method,
-				"level", decision.Level,
+				"level", decision.Level.String(),
 				"ema", stats.EMA,
 				"p95", stats.P95,
 				"p99", stats.P99)
@@ -234,7 +236,7 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		switch decision.Level {
 		case floodgate.Warning, floodgate.Moderate:
 			logger.WarnContext(ctx, "backpressure detected",
-				"level", decision.Level,
+				"level", decision.Level.String(),
 				"method", method,
 				"ema", stats.EMA,
 				"p95", stats.P95,

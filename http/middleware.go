@@ -209,6 +209,8 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 				case floodgate.Critical:
 					retryAfter = cfg.RetryAfterCritical
 				default:
+					// For custom algorithms that reject at other levels (Warning/Moderate),
+					// use Emergency retry time as a conservative default
 					retryAfter = cfg.RetryAfterEmergency
 				}
 
@@ -216,7 +218,7 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
 				logger.ErrorContext(r.Context(), "backpressure rejection",
 					"route", routeKey,
-					"level", decision.Level,
+					"level", decision.Level.String(),
 					"ema", stats.EMA,
 					"p95", stats.P95,
 					"p99", stats.P99)
@@ -234,7 +236,7 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 			switch decision.Level {
 			case floodgate.Warning, floodgate.Moderate:
 				logger.WarnContext(r.Context(), "backpressure detected",
-					"level", decision.Level,
+					"level", decision.Level.String(),
 					"route", routeKey,
 					"ema", stats.EMA,
 					"p95", stats.P95,
