@@ -93,13 +93,17 @@ jobs:
     strategy:
       matrix:
         example:
-          - grpc-backpressure
-          - http-backpressure
-          - configurable-logging
+          - basic
+          - grpc-server
+          - http-server
+          - custom-logger
+          - slog-logger
+          - zap-logger
           - prometheus-metrics
-          - opentelemetry-metrics
+          - otel-metrics
           - datadog-metrics
           - tracing-jaeger
+          - codel-http
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
