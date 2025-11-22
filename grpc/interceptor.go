@@ -229,7 +229,7 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 				Level:  decision.Level,
 				Result: "rejected",
 			}, 0, true)
-			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - %s backpressure", decision.Level)
+			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - %s backpressure", decision.Level.String())
 		}
 
 		// Log warnings for elevated backpressure (not rejecting)
