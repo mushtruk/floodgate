@@ -228,7 +228,7 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 					Level:  decision.Level,
 					Result: "rejected",
 				}, 0, true)
-				http.Error(w, fmt.Sprintf("Service Unavailable - %s backpressure", decision.Level), http.StatusServiceUnavailable)
+				http.Error(w, fmt.Sprintf("Service Unavailable - %s backpressure", decision.Level.String()), http.StatusServiceUnavailable)
 				return
 			}
 
