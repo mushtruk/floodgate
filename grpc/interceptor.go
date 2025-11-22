@@ -17,35 +17,10 @@ import (
 
 // Config holds configuration for the backpressure interceptor.
 type Config struct {
-	CacheSize            int
-	CacheTTL             time.Duration
-	DispatcherBufferSize int
-	Thresholds           floodgate.Thresholds
-	SkipMethods          []string
-	EnableMetrics        bool
-	MetricsInterval      time.Duration
-
-	// Circuit breaker configuration
-	CircuitBreakerMaxFailures      int
-	CircuitBreakerTimeout          time.Duration
-	CircuitBreakerSuccessThreshold int
-
-	// Tracker configuration per method
-	TrackerAlpha      float32
-	TrackerWindowSize int
-	TrackerSampleSize int
-
-	// Retry-after headers (seconds)
-	RetryAfterEmergency int
-	RetryAfterCritical  int
-	RetryAfterCircuit   int
-
 	// Logger for backpressure events. If nil, uses DefaultLogger.
 	Logger floodgate.Logger
-
 	// Metrics collector for observability. If nil, uses NoOpMetrics (disabled).
 	Metrics floodgate.MetricsCollector
-
 	// Algorithm determines backpressure decisions (optional).
 	// If nil, uses ThresholdAlgorithm with cfg.Thresholds.
 	//
@@ -53,7 +28,23 @@ type Config struct {
 	//   cfg.Algorithm = nil  // Use default thresholds (backward compatible)
 	//   cfg.Algorithm = floodgate.NewThresholdAlgorithm(customThresholds)
 	//   cfg.Algorithm = codel.NewAlgorithm()
-	Algorithm floodgate.Algorithm
+	Algorithm                      floodgate.Algorithm
+	SkipMethods                    []string
+	Thresholds                     floodgate.Thresholds
+	CacheSize                      int
+	CircuitBreakerMaxFailures      int
+	MetricsInterval                time.Duration
+	CacheTTL                       time.Duration
+	DispatcherBufferSize           int
+	TrackerWindowSize              int
+	TrackerSampleSize              int
+	CircuitBreakerTimeout          time.Duration
+	CircuitBreakerSuccessThreshold int
+	RetryAfterEmergency            int
+	RetryAfterCritical             int
+	RetryAfterCircuit              int
+	TrackerAlpha                   float32
+	EnableMetrics                  bool
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -90,7 +81,7 @@ func DefaultConfig() Config {
 
 // UnaryServerInterceptor creates a gRPC unary server interceptor with adaptive backpressure.
 //
-//nolint:gocognit // Interceptor requires higher complexity for request lifecycle management
+//nolint:gocognit,gocyclo // Interceptor requires higher complexity for request lifecycle management
 func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInterceptor {
 	registry := expirable.NewLRU[string, floodgate.Tracker[time.Duration, floodgate.Stats]](
 		cfg.CacheSize,
@@ -182,7 +173,7 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 		}
 
 		if !circuitBreaker.Allow() {
-			_ = grpc.SetTrailer(ctx, retryAfterCircuit)
+			_ = grpc.SetTrailer(ctx, retryAfterCircuit) //nolint:errcheck // Trailer is best-effort
 			logger.WarnContext(ctx, "circuit breaker open", "method", method)
 			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
 
@@ -216,7 +207,7 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 			}
 
 			circuitBreaker.RecordFailure()
-			_ = grpc.SetTrailer(ctx, retryAfter)
+			_ = grpc.SetTrailer(ctx, retryAfter) //nolint:errcheck // Trailer is best-effort
 			logger.ErrorContext(ctx, "backpressure rejection",
 				"method", method,
 				"level", decision.Level.String(),

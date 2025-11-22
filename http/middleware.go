@@ -14,35 +14,10 @@ import (
 
 // Config holds configuration for the backpressure middleware.
 type Config struct {
-	CacheSize            int
-	CacheTTL             time.Duration
-	DispatcherBufferSize int
-	Thresholds           floodgate.Thresholds
-	SkipPaths            []string
-	EnableMetrics        bool
-	MetricsInterval      time.Duration
-
-	// Circuit breaker configuration
-	CircuitBreakerMaxFailures      int
-	CircuitBreakerTimeout          time.Duration
-	CircuitBreakerSuccessThreshold int
-
-	// Tracker configuration per route
-	TrackerAlpha      float32
-	TrackerWindowSize int
-	TrackerSampleSize int
-
-	// Retry-after headers (seconds)
-	RetryAfterEmergency int
-	RetryAfterCritical  int
-	RetryAfterCircuit   int
-
 	// Logger for backpressure events. If nil, uses DefaultLogger.
 	Logger floodgate.Logger
-
 	// Metrics collector for observability. If nil, uses NoOpMetrics (disabled).
 	Metrics floodgate.MetricsCollector
-
 	// Algorithm determines backpressure decisions (optional).
 	// If nil, uses ThresholdAlgorithm with cfg.Thresholds.
 	//
@@ -50,7 +25,23 @@ type Config struct {
 	//   cfg.Algorithm = nil  // Use default thresholds (backward compatible)
 	//   cfg.Algorithm = floodgate.NewThresholdAlgorithm(customThresholds)
 	//   cfg.Algorithm = codel.NewAlgorithm()
-	Algorithm floodgate.Algorithm
+	Algorithm                      floodgate.Algorithm
+	SkipPaths                      []string
+	Thresholds                     floodgate.Thresholds
+	CacheSize                      int
+	CircuitBreakerMaxFailures      int
+	MetricsInterval                time.Duration
+	CacheTTL                       time.Duration
+	DispatcherBufferSize           int
+	TrackerWindowSize              int
+	TrackerSampleSize              int
+	CircuitBreakerTimeout          time.Duration
+	CircuitBreakerSuccessThreshold int
+	RetryAfterEmergency            int
+	RetryAfterCritical             int
+	RetryAfterCircuit              int
+	TrackerAlpha                   float32
+	EnableMetrics                  bool
 }
 
 // DefaultConfig returns sensible default configuration.
@@ -88,7 +79,7 @@ func DefaultConfig() Config {
 
 // Middleware creates an HTTP middleware with adaptive backpressure.
 //
-//nolint:gocognit // Middleware requires higher complexity for request lifecycle management
+//nolint:gocognit,gocyclo // Middleware requires higher complexity for request lifecycle management
 func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler {
 	registry := expirable.NewLRU[string, floodgate.Tracker[time.Duration, floodgate.Stats]](
 		cfg.CacheSize,

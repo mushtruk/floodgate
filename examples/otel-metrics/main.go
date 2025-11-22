@@ -95,12 +95,12 @@ func main() {
 	cfg := bpgrpc.DefaultConfig()
 	cfg.Metrics = metrics
 	cfg.Thresholds = floodgate.Thresholds{
-		P99Emergency: 500 * time.Millisecond,  // Emergency at 500ms P99
-		P95Critical:  200 * time.Millisecond,  // Critical at 200ms P95
-		EMACritical:  100 * time.Millisecond,  // And 100ms EMA
-		P95Moderate:  150 * time.Millisecond,  // Moderate at 150ms P95
-		EMAWarning:   50 * time.Millisecond,   // Warning at 50ms EMA
-		SlopeWarning: 10 * time.Millisecond,   // Warning on 10ms slope
+		P99Emergency: 500 * time.Millisecond, // Emergency at 500ms P99
+		P95Critical:  200 * time.Millisecond, // Critical at 200ms P95
+		EMACritical:  100 * time.Millisecond, // And 100ms EMA
+		P95Moderate:  150 * time.Millisecond, // Moderate at 150ms P95
+		EMAWarning:   50 * time.Millisecond,  // Warning at 50ms EMA
+		SlopeWarning: 10 * time.Millisecond,  // Warning on 10ms slope
 	}
 	cfg.SkipMethods = []string{
 		"/grpc.health.",
