@@ -53,32 +53,31 @@ func DefaultThresholds() Thresholds {
 }
 
 type emaTracker struct {
-	alpha      int64
-	alphaComp  int64
-	windowSize int
 	emaSlice   []int64
+	samples    []int64
+	sortBuffer []int64
 
-	emaNanos     int64
-	processCount int64
-
-	slope        int64
-	drift        int64
-	percentDrift float64
-
-	percentileEnabled bool
-	samples           []int64
-	sampleSize        int
-	sampleIndex       int
-	sortBuffer        []int64
-
+	alpha                int64
+	alphaComp            int64
+	emaNanos             int64
+	processCount         int64
+	slope                int64
+	drift                int64
 	cachedP50            int64
 	cachedP95            int64
 	cachedP99            int64
 	lastPercentileCalcAt int64
-	percentileCacheValid bool
+
+	percentDrift float64
 
 	mu           sync.RWMutex
 	percentileMu sync.RWMutex
+
+	windowSize           int
+	sampleSize           int
+	sampleIndex          int
+	percentileEnabled    bool
+	percentileCacheValid bool
 }
 
 // NewTracker creates a new latency tracker with the given options.

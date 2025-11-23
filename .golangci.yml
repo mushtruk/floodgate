@@ -1,4 +1,4 @@
-version: 2
+version: "2"
 
 run:
   timeout: 5m
@@ -7,129 +7,111 @@ run:
 
 linters:
   enable:
-    # Enabled by default
-    - errcheck      # Check for unchecked errors
-    - govet         # Vet examines Go source code
-    - ineffassign   # Detect ineffectual assignments
-    - staticcheck   # Go static analysis (includes gosimple)
-    - unused        # Check for unused code
-
-    # Additional important linters
-    - misspell      # Check for misspelled words
-    - revive        # Fast, configurable, extensible linter
-    - unconvert     # Remove unnecessary type conversions
-    - unparam       # Find unused function parameters
-    - gocyclo       # Cyclomatic complexity
-    - gocritic      # Comprehensive Go source code linter
-    - gosec         # Security problems
-    - bodyclose     # Check HTTP response body is closed
-    - noctx         # Find HTTP requests without context
-    - errname       # Check error naming conventions
-    - errorlint     # Find code that will cause problems with Go 1.13+ error wrapping
-    - goconst       # Find repeated strings that could be constants
-    - gocognit      # Compute cognitive complexity
-    - godot         # Check comments end in period
-    - prealloc      # Find slice declarations that could be preallocated
-    - predeclared   # Find code that shadows predeclared identifiers
-
-formatters:
-  enable:
-    - gofmt         # Check formatting
-    - goimports     # Check imports formatting
-
-linters-settings:
-  gocyclo:
-    min-complexity: 15
-
-  gocognit:
-    min-complexity: 30
-
-  govet:
-    check-shadowing: true
-    enable-all: true
-
-  revive:
-    severity: warning
-    enable-all-rules: false
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+    - gocyclo
+    - gocritic
+    - gosec
+    - bodyclose
+    - noctx
+    - errname
+    - errorlint
+    - goconst
+    - gocognit
+    - godot
+    - prealloc
+    - predeclared
+  settings:
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 30
+    govet:
+      enable-all: true
+    revive:
+      severity: warning
+      enable-all-rules: false
+      rules:
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: if-return
+        - name: var-naming
+        - name: unexported-return
+        - name: time-naming
+        - name: context-as-argument
+        - name: context-keys-type
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - whyNoLint
+        - unnamedResult
+        - hugeParam
+        - httpNoBody
+    gosec:
+      excludes:
+        - G404
+    godot:
+      scope: declarations
+      capital: true
+  exclusions:
     rules:
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: if-return
-      - name: var-naming
-      - name: unexported-return
-      - name: time-naming
-      - name: context-as-argument
-      - name: context-keys-type
+      # Exclude some linters from running on tests files
+      - path: _test\.go$
+        linters:
+          - gocyclo
+          - errcheck
+          - gosec
+          - gocritic
+          - gocognit
+          - godot
+          - goconst
 
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
+      # Exclude example files from certain checks
+      - path: examples/
+        linters:
+          - errcheck
+          - gosec
+          - gocritic
+          - noctx
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-    disabled-checks:
-      - whyNoLint
-      - unnamedResult
+      # Allow embedding in struct field comments
+      - linters:
+          - godot
+        source: "// [a-z]+"
 
-  gosec:
-    excludes:
-      - G404 # Use of weak random number generator - acceptable for non-crypto use
-
-  godot:
-    scope: declarations
-    capital: true
+      # Ignore ineffassign for rejected variable (used for metrics/observability)
+      - path: (grpc/interceptor|http/middleware)\.go$
+        linters:
+          - ineffassign
+        text: "ineffectual assignment to rejected"
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
 
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - gosec
-        - gocritic
-        - gocognit
-        - godot
-        - goconst
-
-    # Exclude example files from certain checks
-    - path: examples/
-      linters:
-        - errcheck
-        - gosec
-        - gocritic
-
-    # Allow embedding in struct field comments
-    - linters:
-        - godot
-      source: "// [a-z]+"
-
-    # Ignore ineffassign for rejected variable (used for metrics/observability)
-    - path: (grpc/interceptor|http/middleware)\.go
-      linters:
-        - ineffassign
-      text: "ineffectual assignment to rejected"
-
-  # Show all issues from a linter
-  new: false
-
-  # Independently from option `exclude` CI will not fail if error doesn't match
-  # with any of exclude rules
-  exclude-case-sensitive: false
-
 output:
-  format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  uniq-by-line: true
-  sort-results: true
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
+  sort-order:
+    - linter
+    - severity
+    - file

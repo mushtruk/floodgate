@@ -72,14 +72,14 @@ func TestStats_Level(t *testing.T) {
 
 func TestLevel_String(t *testing.T) {
 	tests := []struct {
-		level    Level
 		expected string
+		level    Level
 	}{
-		{Normal, "normal"},
-		{Warning, "warning"},
-		{Moderate, "moderate"},
-		{Critical, "critical"},
-		{Emergency, "emergency"},
+		{"normal", Normal},
+		{"warning", Warning},
+		{"moderate", Moderate},
+		{"critical", Critical},
+		{"emergency", Emergency},
 	}
 
 	for _, tt := range tests {

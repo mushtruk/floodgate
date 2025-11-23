@@ -18,6 +18,8 @@ A sophisticated, production-ready Go library for adaptive backpressure and load 
 - 📊 **Pluggable Metrics**: Prometheus, OpenTelemetry, Datadog, or custom metrics backends
 - 🔍 **Distributed Tracing**: OpenTelemetry tracing for visualizing backpressure in Jaeger, Zipkin, or APM tools
 - 🔌 **Pluggable Logging**: Context-aware logging interface compatible with any Go logging framework
+- 🎨 **Decorator Patterns**: Composable wrappers for observability (logging, metrics, tracing, caching, filtering)
+- 🔀 **Pluggable Algorithms**: CoDel, Threshold, or custom backpressure algorithms
 
 ## Installation
 
@@ -247,18 +249,127 @@ fmt.Printf("Drop rate: %.2f%%\n", dispatcher.DropRate())
 ## Performance
 
 - **Total overhead**: <3μs per request (0.3% overhead for 1ms requests, 0.03% for 10ms)
-- **Stats evaluation**: 35ns via intelligent caching
-- **Process latency**: 39ns to record a measurement
+- **Stats evaluation**: 29ns via intelligent caching (v1.5.0: 17% faster)
+- **Process latency**: 32ns to record a measurement (v1.5.0: 16.7% faster)
+- **Algorithm decisions**: 4.3ns (Threshold) to 50ns (CoDel), zero allocations
 - **Memory**: ~3KB per tracked method (200 samples, configurable: 100-1000)
 - **Zero allocations**: All hot paths are allocation-free
 - **Concurrency**: Thread-safe with minimal lock contention
 - **Scalability**: Linear scaling with concurrent requests
+- **Decorator overhead**: Pay-per-use (zero when not instantiated)
 
 **Benefit**: Negligible performance impact even under extreme load (100K+ req/s).
 
 **Typical memory usage**: ~1.6 MB for 512 methods (vs 8 MB with 1K samples)
 
-See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
+See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis including v1.5.0 decorator pattern overhead.
+
+## Decorator Patterns (v1.5.0)
+
+Floodgate provides composable decorator wrappers for adding observability without modifying core logic.
+
+### Circuit Breaker Wrappers
+
+Add logging, metrics, and alerting to circuit breakers:
+
+```go
+import "github.com/mushtruk/floodgate"
+
+// Individual decorators
+cb := floodgate.NewCircuitBreaker(10, 5*time.Second, 3)
+cb = floodgate.WithLogging(cb, logger)
+cb = floodgate.WithMetrics(cb, metrics)
+cb = floodgate.WithAlerting(cb, alerter)
+
+// Or use the fully instrumented version
+cb = floodgate.NewInstrumentedCircuitBreaker(
+    10,                // maxFailures
+    5*time.Second,     // timeout
+    3,                 // successThreshold
+    logger,
+    metrics,
+    alerter,
+)
+
+// Usage remains the same
+if cb.Allow() {
+    if success {
+        cb.RecordSuccess()
+    } else {
+        cb.RecordFailure()
+    }
+}
+```
+
+**Performance**: Logging/metrics overhead only on state transitions (~15ns), not on every call.
+
+### Algorithm Wrappers
+
+Add tracing, caching, and fallback behavior to algorithms:
+
+```go
+import (
+    "github.com/mushtruk/floodgate"
+    "github.com/mushtruk/floodgate/algorithms/codel"
+)
+
+// Base algorithm
+algo := codel.NewAlgorithm()
+
+// Add distributed tracing
+algo = floodgate.WithTracing(algo, tracer)
+
+// Add decision caching (100ms TTL)
+algo = floodgate.NewCachedAlgorithm(algo, 100*time.Millisecond)
+
+// Add fallback on panic
+fallback := floodgate.NewThresholdAlgorithm(floodgate.DefaultThresholds())
+algo = floodgate.WithFallback(algo, fallback, logger)
+
+// Or use fully instrumented algorithm
+algo = floodgate.NewInstrumentedAlgorithm(
+    codel.NewAlgorithm(),
+    tracer,
+    logger,
+    metrics,
+)
+```
+
+**Performance**:
+- Tracing: +100ns (acceptable for distributed tracing value)
+- Caching: +5ns (hit), +10ns (miss)
+- Fallback: +2ns (defer overhead only)
+
+### Dispatcher Filters
+
+Filter events before they're processed:
+
+```go
+import "github.com/mushtruk/floodgate"
+
+// Create dispatcher with filters
+dispatcher := floodgate.NewFilteredDispatcher[time.Duration](
+    ctx,
+    1024,
+    floodgate.NewSamplingFilter[time.Duration](0.1),      // Sample 10%
+    floodgate.NewRateLimitFilter[time.Duration](1000),    // Max 1000/sec
+    floodgate.NewDeduplicationFilter[time.Duration](),    // Remove duplicates
+)
+
+// Filter chain applies in order
+dispatcher.Emit(tracker, latency)
+```
+
+**Available Filters**:
+- `SamplingFilter` - Sample events at specified rate (0.0 to 1.0)
+- `RateLimitFilter` - Limit events per second
+- `DeduplicationFilter` - Remove duplicate events
+- `ThresholdFilter` - Filter based on value thresholds
+- `PartitionFilter` - Route to different observers based on key
+
+**Performance**: 3-25ns overhead per filter (early rejection avoids downstream processing).
+
+See [ALGORITHMS.md](ALGORITHMS.md) for algorithm decorator examples.
 
 ## Observability
 

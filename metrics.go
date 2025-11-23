@@ -91,13 +91,13 @@ type RequestLabels struct {
 	// or HTTP route (e.g., "GET /api/users").
 	Method string
 
-	// Level is the backpressure level at the time of the request.
-	// Values: Normal, Warning, Moderate, Critical, Emergency
-	Level Level
-
 	// Result indicates the request outcome.
 	// Values: "success" (request accepted), "rejected" (backpressure rejection)
 	Result string
+
+	// Level is the backpressure level at the time of the request.
+	// Values: Normal, Warning, Moderate, Critical, Emergency
+	Level Level
 }
 
 // NoOpMetrics is a metrics collector that discards all metrics.

@@ -32,17 +32,15 @@ func (s CircuitState) String() string {
 
 // CircuitBreaker prevents cascading failures.
 type CircuitBreaker struct {
-	mu sync.RWMutex
-
-	state         CircuitState
-	failureCount  int
-	successCount  int
-	lastStateTime time.Time
-
-	maxFailures       int
+	lastStateTime     time.Time
 	timeout           time.Duration
-	successThreshold  int
 	minTimeBetweenOps time.Duration
+	state             CircuitState
+	failureCount      int
+	successCount      int
+	maxFailures       int
+	successThreshold  int
+	mu                sync.RWMutex
 }
 
 // NewCircuitBreaker creates a new circuit breaker with the specified configuration.
