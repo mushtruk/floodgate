@@ -28,7 +28,6 @@ linters:
     - godot
     - prealloc
     - predeclared
-
   settings:
     gocyclo:
       min-complexity: 15
@@ -70,7 +69,6 @@ linters:
     godot:
       scope: declarations
       capital: true
-
   exclusions:
     rules:
       # Exclude some linters from running on tests files

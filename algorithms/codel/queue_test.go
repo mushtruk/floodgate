@@ -161,9 +161,11 @@ func TestQueueAlgorithm_Enqueue_QueueFull(t *testing.T) {
 
 	ctx := context.Background()
 	blockChan := make(chan struct{})
+	startedChan := make(chan struct{}, 3)
 
 	// Fill the queue
 	blocker := func(ctx context.Context) error {
+		startedChan <- struct{}{} // Signal handler started
 		select {
 		case <-blockChan:
 			return nil
@@ -182,10 +184,12 @@ func TestQueueAlgorithm_Enqueue_QueueFull(t *testing.T) {
 		}()
 	}
 
-	// Give time for requests to enter queue
+	// Wait for first handler to start (worker is now blocked)
+	<-startedChan
+	// Give time for other 2 to enter queue
 	time.Sleep(50 * time.Millisecond)
 
-	// Try to enqueue when queue is full
+	// Try to enqueue when queue is full (worker blocked + 2 in queue = full)
 	err := q.Enqueue(ctx, func(ctx context.Context) error {
 		return nil
 	})
