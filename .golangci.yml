@@ -88,6 +88,7 @@ linters:
           - errcheck
           - gosec
           - gocritic
+          - noctx
 
       # Allow embedding in struct field comments
       - linters:
