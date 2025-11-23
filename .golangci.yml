@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -5,14 +7,11 @@ run:
 
 linters:
   enable:
-    # Enabled by default
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
-
-    # Additional important linters
     - misspell
     - revive
     - unconvert
@@ -29,99 +28,91 @@ linters:
     - godot
     - prealloc
     - predeclared
-    - gofmt
-    - goimports
 
-linters-settings:
-  gocyclo:
-    min-complexity: 15
+  settings:
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 30
+    govet:
+      enable-all: true
+    revive:
+      severity: warning
+      enable-all-rules: false
+      rules:
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: if-return
+        - name: var-naming
+        - name: unexported-return
+        - name: time-naming
+        - name: context-as-argument
+        - name: context-keys-type
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - whyNoLint
+        - unnamedResult
+        - hugeParam
+        - httpNoBody
+    gosec:
+      excludes:
+        - G404
+    godot:
+      scope: declarations
+      capital: true
 
-  gocognit:
-    min-complexity: 30
-
-  govet:
-    enable-all: true
-
-  revive:
-    severity: warning
-    enable-all-rules: false
+  exclusions:
     rules:
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: if-return
-      - name: var-naming
-      - name: unexported-return
-      - name: time-naming
-      - name: context-as-argument
-      - name: context-keys-type
+      # Exclude some linters from running on tests files
+      - path: _test\.go$
+        linters:
+          - gocyclo
+          - errcheck
+          - gosec
+          - gocritic
+          - gocognit
+          - godot
+          - goconst
 
-  errcheck:
-    check-type-assertions: true
-    check-blank: false  # Allow _, _ = pattern for intentionally ignored errors
+      # Exclude example files from certain checks
+      - path: examples/
+        linters:
+          - errcheck
+          - gosec
+          - gocritic
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-    disabled-checks:
-      - whyNoLint
-      - unnamedResult
-      - hugeParam    # Config structs are part of public API
-      - httpNoBody   # nil is fine for empty request bodies
+      # Allow embedding in struct field comments
+      - linters:
+          - godot
+        source: "// [a-z]+"
 
-  gosec:
-    excludes:
-      - G404
-
-  godot:
-    scope: declarations
-    capital: true
+      # Ignore ineffassign for rejected variable (used for metrics/observability)
+      - path: (grpc/interceptor|http/middleware)\.go$
+        linters:
+          - ineffassign
+        text: "ineffectual assignment to rejected"
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
 
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go$
-      linters:
-        - gocyclo
-        - errcheck
-        - gosec
-        - gocritic
-        - gocognit
-        - godot
-        - goconst
-
-    # Exclude example files from certain checks
-    - path: examples/
-      linters:
-        - errcheck
-        - gosec
-        - gocritic
-
-    # Allow embedding in struct field comments
-    - linters:
-        - godot
-      source: "// [a-z]+"
-
-    # Ignore ineffassign for rejected variable (used for metrics/observability)
-    - path: (grpc/interceptor|http/middleware)\.go$
-      linters:
-        - ineffassign
-      text: "ineffectual assignment to rejected"
-
-  new: false
-  exclude-case-sensitive: false
-
 output:
   formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  sort-results: true
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
+  sort-order:
+    - linter
+    - severity
+    - file

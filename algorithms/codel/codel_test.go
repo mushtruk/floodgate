@@ -51,6 +51,42 @@ func TestNewAlgorithm_CustomOptions(t *testing.T) {
 	}
 }
 
+func TestNewAlgorithm_InvalidTargetDelay_Panics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("NewAlgorithm() with zero targetDelay should panic")
+		}
+	}()
+
+	_ = NewAlgorithm(WithTargetDelay(0))
+}
+
+func TestNewAlgorithm_InvalidInterval_Panics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("NewAlgorithm() with zero interval should panic")
+		}
+	}()
+
+	_ = NewAlgorithm(WithInterval(0))
+}
+
+func TestNewAlgorithm_NegativeTargetDelay_Panics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("NewAlgorithm() with negative targetDelay should panic")
+		}
+	}()
+
+	_ = NewAlgorithm(WithTargetDelay(-1 * time.Millisecond))
+}
+
 func TestAlgorithm_InitialState_NoRejection(t *testing.T) {
 	t.Parallel()
 
@@ -487,5 +523,72 @@ func BenchmarkCoDel_Allocation(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		decision := algo.Decide(stats)
 		_ = decision
+	}
+}
+
+// TestAlgorithm_FirstAboveReset_BugFix tests the critical bug fix where
+// firstAbove must be reset even in the fast path when delay drops below target.
+// Without this fix, accumulated time can cause incorrect dropping mode entry.
+func TestAlgorithm_FirstAboveReset_BugFix(t *testing.T) {
+	t.Parallel()
+
+	algo := NewAlgorithm(
+		WithTargetDelay(5*time.Millisecond),
+		WithInterval(100*time.Millisecond),
+	)
+
+	// Scenario: Traffic pattern with bursts
+	// 1. High latency for 50ms (not persistent enough to trigger dropping)
+	// 2. Low latency for 200ms (should reset firstAbove)
+	// 3. High latency for 50ms (should NOT immediately trigger dropping)
+
+	// Phase 1: Brief high latency spike (50ms)
+	highStats := floodgate.Stats{
+		EMA: 50 * time.Millisecond,
+		P95: 60 * time.Millisecond,
+		P99: 70 * time.Millisecond,
+	}
+
+	// Simulate firstAbove being set 50ms ago
+	algo.mu.Lock()
+	algo.firstAbove = time.Now().Add(-50 * time.Millisecond)
+	algo.mu.Unlock()
+
+	decision := algo.Decide(highStats)
+	if decision.Reject {
+		t.Error("Should not reject - delay not persistent enough (50ms < 100ms interval)")
+	}
+
+	// Phase 2: Latency drops below target
+	lowStats := floodgate.Stats{
+		EMA: 2 * time.Millisecond,
+		P95: 3 * time.Millisecond,
+		P99: 4 * time.Millisecond,
+	}
+
+	decision = algo.Decide(lowStats)
+	if decision.Reject {
+		t.Error("Should not reject when below target")
+	}
+
+	// CRITICAL: firstAbove MUST be reset here
+	algo.mu.Lock()
+	firstAbove := algo.firstAbove
+	algo.mu.Unlock()
+
+	if !firstAbove.IsZero() {
+		t.Error("BUG: firstAbove not reset when delay drops below target - this will cause incorrect dropping mode entry")
+	}
+
+	// Phase 3: Another brief high latency spike
+	// Without the fix, this would use accumulated time from Phase 1
+	// and incorrectly enter dropping mode
+	algo.mu.Lock()
+	algo.firstAbove = time.Now().Add(-50 * time.Millisecond)
+	algo.mu.Unlock()
+
+	decision = algo.Decide(highStats)
+	if decision.Reject {
+		t.Error("Should not reject - this is a NEW spike, not persistent delay (BUG: using accumulated time from previous spike)")
 	}
 }

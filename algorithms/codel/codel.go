@@ -110,6 +110,14 @@ func NewAlgorithm(opts ...Option) *Algorithm {
 		opt(a)
 	}
 
+	// Validate configuration to prevent division by zero
+	if a.targetDelay <= 0 {
+		panic("codel: targetDelay must be positive")
+	}
+	if a.interval <= 0 {
+		panic("codel: interval must be positive")
+	}
+
 	// Cache nanoseconds for performance
 	a.intervalNs = a.interval.Nanoseconds()
 	a.targetDelayNs = a.targetDelay.Nanoseconds()
@@ -130,6 +138,14 @@ func (a *Algorithm) Decide(stats floodgate.Stats) floodgate.Decision {
 	aboveTarget := sojournTime > a.targetDelay
 	if !aboveTarget && atomic.LoadUint32(&a.droppingFlag) == 0 {
 		// Common case: not above target, not dropping
+		// However, we still need to reset firstAbove if it was set during a transient spike
+		// Check if firstAbove is set (requires lock unfortunately)
+		a.mu.Lock()
+		if !a.firstAbove.IsZero() {
+			a.firstAbove = time.Time{}
+		}
+		a.mu.Unlock()
+
 		return floodgate.Decision{
 			Level:  a.mapToLevel(sojournTime),
 			Reject: false,
@@ -143,9 +159,11 @@ func (a *Algorithm) Decide(stats floodgate.Stats) floodgate.Decision {
 		// Below target - exit dropping state if necessary
 		if a.dropping {
 			a.dropping = false
-			a.firstAbove = time.Time{}
 			atomic.StoreUint32(&a.droppingFlag, 0)
 		}
+		// CRITICAL: Always reset firstAbove when below target to prevent
+		// accumulated time from incorrectly triggering dropping mode later
+		a.firstAbove = time.Time{}
 		a.mu.Unlock()
 
 		return floodgate.Decision{
