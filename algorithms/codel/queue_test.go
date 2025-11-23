@@ -240,7 +240,7 @@ func TestQueueAlgorithm_Enqueue_ContextCanceled(t *testing.T) {
 	})
 
 	// Since queue is empty and context is already done, ctx.Done() case should trigger
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Enqueue() with canceled context error = %v, want context.Canceled", err)
 	}
 

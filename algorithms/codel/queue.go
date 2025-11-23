@@ -224,7 +224,11 @@ func (q *QueueAlgorithm) Enqueue(ctx context.Context, handler func(context.Conte
 	}
 
 	// Get channel from pool to reduce allocations
-	resultChan := resultChannelPool.Get().(chan QueueResult)
+	resultChanRaw := resultChannelPool.Get()
+	resultChan, ok := resultChanRaw.(chan QueueResult)
+	if !ok {
+		panic("resultChannelPool returned unexpected type")
+	}
 
 	req := QueuedRequest{
 		EnqueueTime: time.Now(),
