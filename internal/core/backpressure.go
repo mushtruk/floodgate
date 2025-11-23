@@ -16,12 +16,12 @@ type Config struct {
 	Algorithm                      floodgate.Algorithm
 	Logger                         floodgate.Logger
 	Metrics                        floodgate.MetricsCollector
-	CircuitBreakerMaxFailures      int
 	CircuitBreakerTimeout          time.Duration
 	MetricsInterval                time.Duration
+	CacheTTL                       time.Duration
+	CircuitBreakerMaxFailures      int
 	CacheSize                      int
 	DispatcherBufferSize           int
-	CacheTTL                       time.Duration
 	CircuitBreakerSuccessThreshold int
 	TrackerWindowSize              int
 	TrackerSampleSize              int
@@ -45,8 +45,8 @@ type BackpressureCore struct {
 // DecisionResult contains the backpressure decision and associated tracker.
 type DecisionResult struct {
 	Tracker  floodgate.Tracker[time.Duration, floodgate.Stats]
-	Decision floodgate.Decision
 	Stats    floodgate.Stats
+	Decision floodgate.Decision
 }
 
 // NewBackpressureCore creates a new protocol-agnostic backpressure core.
