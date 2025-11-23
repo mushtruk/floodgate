@@ -8,142 +8,50 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/mushtruk/floodgate"
+	"github.com/mushtruk/floodgate/internal/core"
 )
-
-// Config holds configuration for the backpressure middleware.
-type Config struct {
-	// Logger for backpressure events. If nil, uses DefaultLogger.
-	Logger floodgate.Logger
-	// Metrics collector for observability. If nil, uses NoOpMetrics (disabled).
-	Metrics floodgate.MetricsCollector
-	// Algorithm determines backpressure decisions (optional).
-	// If nil, uses ThresholdAlgorithm with cfg.Thresholds.
-	//
-	// Examples:
-	//   cfg.Algorithm = nil  // Use default thresholds (backward compatible)
-	//   cfg.Algorithm = floodgate.NewThresholdAlgorithm(customThresholds)
-	//   cfg.Algorithm = codel.NewAlgorithm()
-	Algorithm                      floodgate.Algorithm
-	SkipPaths                      []string
-	Thresholds                     floodgate.Thresholds
-	CacheSize                      int
-	CircuitBreakerMaxFailures      int
-	MetricsInterval                time.Duration
-	CacheTTL                       time.Duration
-	DispatcherBufferSize           int
-	TrackerWindowSize              int
-	TrackerSampleSize              int
-	CircuitBreakerTimeout          time.Duration
-	CircuitBreakerSuccessThreshold int
-	RetryAfterEmergency            int
-	RetryAfterCritical             int
-	RetryAfterCircuit              int
-	TrackerAlpha                   float32
-	EnableMetrics                  bool
-}
-
-// DefaultConfig returns sensible default configuration.
-func DefaultConfig() Config {
-	return Config{
-		CacheSize:            512,
-		CacheTTL:             2 * time.Minute,
-		DispatcherBufferSize: 1024,
-		Thresholds:           floodgate.DefaultThresholds(),
-		SkipPaths: []string{
-			"/health",
-			"/metrics",
-			"/readiness",
-		},
-		EnableMetrics:   true,
-		MetricsInterval: 1 * time.Minute,
-
-		CircuitBreakerMaxFailures:      3,
-		CircuitBreakerTimeout:          30 * time.Second,
-		CircuitBreakerSuccessThreshold: 5,
-
-		TrackerAlpha:      0.1,
-		TrackerWindowSize: 50,
-		TrackerSampleSize: 200,
-
-		RetryAfterEmergency: 10,
-		RetryAfterCritical:  5,
-		RetryAfterCircuit:   30,
-
-		Logger:    floodgate.NewDefaultLogger(),
-		Metrics:   &floodgate.NoOpMetrics{}, // Disabled by default
-		Algorithm: nil,                      // nil = use threshold-based (backward compatible)
-	}
-}
 
 // Middleware creates an HTTP middleware with adaptive backpressure.
 //
+// This implementation uses BackpressureCore to eliminate code duplication with gRPC interceptor.
+// Both HTTP and gRPC now share the same core backpressure logic, reducing maintenance burden.
+//
+// Usage:
+//
+//	middleware := http.Middleware(ctx, cfg)
+//	handler := middleware(mux)
+//	server := &http.Server{Handler: handler}
+//
 //nolint:gocognit,gocyclo // Middleware requires higher complexity for request lifecycle management
 func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler {
-	registry := expirable.NewLRU[string, floodgate.Tracker[time.Duration, floodgate.Stats]](
-		cfg.CacheSize,
-		nil,
-		cfg.CacheTTL,
-	)
+	// Convert HTTP Config to core.Config
+	coreConfig := core.Config{
+		Algorithm:                      cfg.Algorithm,
+		Logger:                         cfg.Logger,
+		Metrics:                        cfg.Metrics,
+		CacheSize:                      cfg.CacheSize,
+		CacheTTL:                       cfg.CacheTTL,
+		DispatcherBufferSize:           cfg.DispatcherBufferSize,
+		CircuitBreakerMaxFailures:      cfg.CircuitBreakerMaxFailures,
+		CircuitBreakerTimeout:          cfg.CircuitBreakerTimeout,
+		CircuitBreakerSuccessThreshold: cfg.CircuitBreakerSuccessThreshold,
+		TrackerAlpha:                   cfg.TrackerAlpha,
+		TrackerWindowSize:              cfg.TrackerWindowSize,
+		TrackerSampleSize:              cfg.TrackerSampleSize,
+		MetricsInterval:                cfg.MetricsInterval,
+		EnableMetrics:                  cfg.EnableMetrics,
+	}
 
-	dispatcher := floodgate.NewDispatcher[time.Duration](ctx, cfg.DispatcherBufferSize)
-	circuitBreaker := floodgate.NewCircuitBreaker(
-		cfg.CircuitBreakerMaxFailures,
-		cfg.CircuitBreakerTimeout,
-		cfg.CircuitBreakerSuccessThreshold,
-	)
+	// If algorithm not provided, use thresholds
+	if coreConfig.Algorithm == nil {
+		coreConfig.Algorithm = floodgate.NewThresholdAlgorithm(cfg.Thresholds)
+	}
+
+	// Create core backpressure logic
+	bpCore := core.NewBackpressureCore(ctx, coreConfig)
+
 	skipPaths := cfg.SkipPaths
-
-	// Use provided logger or default
-	logger := cfg.Logger
-	if logger == nil {
-		logger = floodgate.NewDefaultLogger()
-	}
-
-	// Use provided metrics or no-op
-	metrics := cfg.Metrics
-	if metrics == nil {
-		metrics = &floodgate.NoOpMetrics{}
-	}
-
-	// Use provided algorithm or default to threshold-based
-	algo := cfg.Algorithm
-	if algo == nil {
-		algo = floodgate.NewThresholdAlgorithm(cfg.Thresholds)
-	}
-
-	// Periodic metrics
-	if cfg.EnableMetrics {
-		go func() {
-			ticker := time.NewTicker(cfg.MetricsInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					cacheLen := registry.Len()
-					dropRate := dispatcher.DropRate()
-
-					// Record cache and dispatcher metrics
-					metrics.RecordCacheSize(cacheLen)
-					metrics.RecordDispatcherStats(dispatcher.DroppedCount(), dispatcher.TotalCount())
-
-					if cacheLen > 0 || dropRate > 0 {
-						logger.InfoContext(ctx, "backpressure metrics",
-							"cache_used", cacheLen,
-							"cache_size", cfg.CacheSize,
-							"cache_pct", float64(cacheLen)/float64(cfg.CacheSize)*100,
-							"drops", dispatcher.DroppedCount(),
-							"total", dispatcher.TotalCount(),
-							"drop_rate", dropRate,
-							"circuit", circuitBreaker.State())
-					}
-				}
-			}
-		}()
-	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,96 +68,38 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 			// Route key: METHOD + path for more granular tracking
 			routeKey := r.Method + " " + path
 
-			tracker, ok := registry.Get(routeKey)
-			if !ok {
-				tracker = floodgate.NewTracker(
-					floodgate.WithAlpha(cfg.TrackerAlpha),
-					floodgate.WithWindowSize(cfg.TrackerWindowSize),
-					floodgate.WithPercentiles(cfg.TrackerSampleSize),
-				)
-				registry.Add(routeKey, tracker)
-			}
-
-			if !circuitBreaker.Allow() {
-				w.Header().Set("Retry-After", fmt.Sprintf("%d", cfg.RetryAfterCircuit))
-				logger.WarnContext(r.Context(), "circuit breaker open", "route", routeKey)
-				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
-
-				// Record rejected request
-				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
-					Method: routeKey,
-					Level:  floodgate.Emergency,
-					Result: "rejected",
-				}, 0, true)
-
-				http.Error(w, "Service Unavailable - circuit breaker open", http.StatusServiceUnavailable)
-				return
-			}
-
-			stats := tracker.Value()
-			decision := algo.Decide(stats)
-
-			var rejected bool
-
-			// Check if algorithm decided to reject
-			if decision.Reject {
+			// Check backpressure using core
+			result, err := bpCore.CheckBackpressure(r.Context(), routeKey)
+			if err != nil {
+				// Determine retry-after based on decision level
 				var retryAfter int
-				switch decision.Level {
+				switch result.Decision.Level {
 				case floodgate.Emergency:
 					retryAfter = cfg.RetryAfterEmergency
 				case floodgate.Critical:
 					retryAfter = cfg.RetryAfterCritical
 				default:
-					// For custom algorithms that reject at other levels (Warning/Moderate),
-					// use Emergency retry time as a conservative default
-					retryAfter = cfg.RetryAfterEmergency
+					retryAfter = cfg.RetryAfterCircuit
 				}
 
-				circuitBreaker.RecordFailure()
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
-				logger.ErrorContext(r.Context(), "backpressure rejection",
-					"route", routeKey,
-					"level", decision.Level.String(),
-					"ema", stats.EMA,
-					"p95", stats.P95,
-					"p99", stats.P99)
-				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
-				metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
-					Method: routeKey,
-					Level:  decision.Level,
-					Result: "rejected",
-				}, 0, true)
-				http.Error(w, fmt.Sprintf("Service Unavailable - %s backpressure", decision.Level.String()), http.StatusServiceUnavailable)
+
+				// Return appropriate error
+				if result.Decision.Level == floodgate.Emergency || result.Decision.Level == floodgate.Critical {
+					http.Error(w, fmt.Sprintf("Service Unavailable - %s backpressure", result.Decision.Level.String()), http.StatusServiceUnavailable)
+				} else {
+					http.Error(w, "Service Unavailable - circuit breaker open", http.StatusServiceUnavailable)
+				}
 				return
 			}
 
-			// Log warnings for elevated backpressure (not rejecting)
-			switch decision.Level {
-			case floodgate.Warning, floodgate.Moderate:
-				logger.WarnContext(r.Context(), "backpressure detected",
-					"level", decision.Level.String(),
-					"route", routeKey,
-					"ema", stats.EMA,
-					"p95", stats.P95,
-					"p99", stats.P99)
-
-			case floodgate.Normal:
-				circuitBreaker.RecordSuccess()
-				metrics.RecordCircuitBreakerState(routeKey, circuitBreaker.State())
-			}
-
+			// Execute handler and record latency
 			start := time.Now()
 			next.ServeHTTP(w, r)
 			latency := time.Since(start)
 
-			dispatcher.Emit(tracker, latency)
-
-			// Record successful request completion
-			metrics.RecordRequest(r.Context(), floodgate.RequestLabels{
-				Method: routeKey,
-				Level:  decision.Level,
-				Result: "success",
-			}, latency, rejected)
+			// Record latency via core
+			bpCore.RecordLatency(r.Context(), result, latency, nil)
 		})
 	}
 }

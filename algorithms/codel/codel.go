@@ -46,8 +46,13 @@ var sqrtLookup = [101]float64{
 //  4. Drop interval decreases with sqrt(count), increasing drop frequency using a control law
 //
 // The algorithm is self-tuning and adapts to network conditions automatically.
+//
+//nolint:govet // fieldalignment: struct layout prioritizes logical grouping over absolute minimal size
 type Algorithm struct {
-	mu sync.Mutex
+	// State (protected by mu)
+	dropNext    time.Time // Time for next drop
+	lastDropped time.Time // Time of last drop
+	firstAbove  time.Time // When delay first exceeded target
 
 	// Configuration
 	targetDelay   time.Duration // Target sojourn time (default: 5ms)
@@ -55,15 +60,12 @@ type Algorithm struct {
 	intervalNs    int64         // Cached interval in nanoseconds for controlLaw
 	targetDelayNs int64         // Cached target delay in nanoseconds for mapToLevel
 
-	// State (protected by mu)
-	dropping    bool      // Currently in dropping state
-	dropNext    time.Time // Time for next drop
-	count       int       // Drop count in current dropping episode
-	lastDropped time.Time // Time of last drop
-	firstAbove  time.Time // When delay first exceeded target
+	mu sync.Mutex
 
 	// Atomic flag for fast-path optimization (0 = not dropping, 1 = dropping)
 	droppingFlag uint32
+	count        int  // Drop count in current dropping episode
+	dropping     bool // Currently in dropping state
 }
 
 // Option configures the CoDel algorithm.
@@ -161,8 +163,7 @@ func (a *Algorithm) Decide(stats floodgate.Stats) floodgate.Decision {
 			a.dropping = false
 			atomic.StoreUint32(&a.droppingFlag, 0)
 		}
-		// CRITICAL: Always reset firstAbove when below target to prevent
-		// accumulated time from incorrectly triggering dropping mode later
+		// Reset firstAbove when below target
 		a.firstAbove = time.Time{}
 		a.mu.Unlock()
 
@@ -257,7 +258,6 @@ func (a *Algorithm) mapToLevel(sojournTime time.Duration) floodgate.Level {
 		return floodgate.Normal
 	}
 
-	// ratio*10 = (sojournNs * 10) / targetDelayNs
 	ratio10 := (sojournNs * 10) / a.targetDelayNs
 
 	switch {

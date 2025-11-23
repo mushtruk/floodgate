@@ -7,150 +7,58 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/mushtruk/floodgate"
+	"github.com/mushtruk/floodgate/internal/core"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	md "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// Config holds configuration for the backpressure interceptor.
-type Config struct {
-	// Logger for backpressure events. If nil, uses DefaultLogger.
-	Logger floodgate.Logger
-	// Metrics collector for observability. If nil, uses NoOpMetrics (disabled).
-	Metrics floodgate.MetricsCollector
-	// Algorithm determines backpressure decisions (optional).
-	// If nil, uses ThresholdAlgorithm with cfg.Thresholds.
-	//
-	// Examples:
-	//   cfg.Algorithm = nil  // Use default thresholds (backward compatible)
-	//   cfg.Algorithm = floodgate.NewThresholdAlgorithm(customThresholds)
-	//   cfg.Algorithm = codel.NewAlgorithm()
-	Algorithm                      floodgate.Algorithm
-	SkipMethods                    []string
-	Thresholds                     floodgate.Thresholds
-	CacheSize                      int
-	CircuitBreakerMaxFailures      int
-	MetricsInterval                time.Duration
-	CacheTTL                       time.Duration
-	DispatcherBufferSize           int
-	TrackerWindowSize              int
-	TrackerSampleSize              int
-	CircuitBreakerTimeout          time.Duration
-	CircuitBreakerSuccessThreshold int
-	RetryAfterEmergency            int
-	RetryAfterCritical             int
-	RetryAfterCircuit              int
-	TrackerAlpha                   float32
-	EnableMetrics                  bool
-}
-
-// DefaultConfig returns sensible default configuration.
-func DefaultConfig() Config {
-	return Config{
-		CacheSize:            512,
-		CacheTTL:             2 * time.Minute,
-		DispatcherBufferSize: 1024,
-		Thresholds:           floodgate.DefaultThresholds(),
-		SkipMethods: []string{
-			"/grpc.health.",
-			"/grpc.reflection.",
-		},
-		EnableMetrics:   true,
-		MetricsInterval: 1 * time.Minute,
-
-		CircuitBreakerMaxFailures:      3,
-		CircuitBreakerTimeout:          30 * time.Second,
-		CircuitBreakerSuccessThreshold: 5,
-
-		TrackerAlpha:      0.1,
-		TrackerWindowSize: 50,
-		TrackerSampleSize: 200,
-
-		RetryAfterEmergency: 10,
-		RetryAfterCritical:  5,
-		RetryAfterCircuit:   30,
-
-		Logger:    floodgate.NewDefaultLogger(),
-		Metrics:   &floodgate.NoOpMetrics{}, // Disabled by default
-		Algorithm: nil,                      // nil = use threshold-based (backward compatible)
-	}
-}
-
 // UnaryServerInterceptor creates a gRPC unary server interceptor with adaptive backpressure.
+//
+// This implementation uses BackpressureCore to eliminate code duplication with HTTP middleware.
+// Both HTTP and gRPC now share the same core backpressure logic, reducing maintenance burden.
+//
+// Usage:
+//
+//	interceptor := grpc.UnaryServerInterceptor(ctx, cfg)
+//	server := grpc.NewServer(grpc.UnaryInterceptor(interceptor))
 //
 //nolint:gocognit,gocyclo // Interceptor requires higher complexity for request lifecycle management
 func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInterceptor {
-	registry := expirable.NewLRU[string, floodgate.Tracker[time.Duration, floodgate.Stats]](
-		cfg.CacheSize,
-		nil,
-		cfg.CacheTTL,
-	)
-
-	dispatcher := floodgate.NewDispatcher[time.Duration](ctx, cfg.DispatcherBufferSize)
-	circuitBreaker := floodgate.NewCircuitBreaker(
-		cfg.CircuitBreakerMaxFailures,
-		cfg.CircuitBreakerTimeout,
-		cfg.CircuitBreakerSuccessThreshold,
-	)
-	skipMethods := cfg.SkipMethods
-
-	// Use provided logger or default
-	logger := cfg.Logger
-	if logger == nil {
-		logger = floodgate.NewDefaultLogger()
+	// Convert gRPC Config to core.Config
+	coreConfig := core.Config{
+		Algorithm:                      cfg.Algorithm,
+		Logger:                         cfg.Logger,
+		Metrics:                        cfg.Metrics,
+		CacheSize:                      cfg.CacheSize,
+		CacheTTL:                       cfg.CacheTTL,
+		DispatcherBufferSize:           cfg.DispatcherBufferSize,
+		CircuitBreakerMaxFailures:      cfg.CircuitBreakerMaxFailures,
+		CircuitBreakerTimeout:          cfg.CircuitBreakerTimeout,
+		CircuitBreakerSuccessThreshold: cfg.CircuitBreakerSuccessThreshold,
+		TrackerAlpha:                   cfg.TrackerAlpha,
+		TrackerWindowSize:              cfg.TrackerWindowSize,
+		TrackerSampleSize:              cfg.TrackerSampleSize,
+		MetricsInterval:                cfg.MetricsInterval,
+		EnableMetrics:                  cfg.EnableMetrics,
 	}
 
-	// Use provided metrics or no-op
-	metrics := cfg.Metrics
-	if metrics == nil {
-		metrics = &floodgate.NoOpMetrics{}
+	// If algorithm not provided, use thresholds
+	if coreConfig.Algorithm == nil {
+		coreConfig.Algorithm = floodgate.NewThresholdAlgorithm(cfg.Thresholds)
 	}
 
-	// Use provided algorithm or default to threshold-based
-	algo := cfg.Algorithm
-	if algo == nil {
-		algo = floodgate.NewThresholdAlgorithm(cfg.Thresholds)
-	}
+	// Create core backpressure logic
+	bpCore := core.NewBackpressureCore(ctx, coreConfig)
 
 	// Pre-allocate metadata to avoid allocation on hot path
 	retryAfterCircuit := md.Pairs("retry-after", fmt.Sprintf("%d", cfg.RetryAfterCircuit))
 	retryAfterEmergency := md.Pairs("retry-after", fmt.Sprintf("%d", cfg.RetryAfterEmergency))
 	retryAfterCritical := md.Pairs("retry-after", fmt.Sprintf("%d", cfg.RetryAfterCritical))
 
-	// Periodic metrics
-	if cfg.EnableMetrics {
-		go func() {
-			ticker := time.NewTicker(cfg.MetricsInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					cacheLen := registry.Len()
-					dropRate := dispatcher.DropRate()
-
-					// Record cache and dispatcher metrics
-					metrics.RecordCacheSize(cacheLen)
-					metrics.RecordDispatcherStats(dispatcher.DroppedCount(), dispatcher.TotalCount())
-
-					if cacheLen > 0 || dropRate > 0 {
-						logger.InfoContext(ctx, "backpressure metrics",
-							"cache_used", cacheLen,
-							"cache_size", cfg.CacheSize,
-							"cache_pct", float64(cacheLen)/float64(cfg.CacheSize)*100,
-							"drops", dispatcher.DroppedCount(),
-							"total", dispatcher.TotalCount(),
-							"drop_rate", dropRate,
-							"circuit", circuitBreaker.State())
-					}
-				}
-			}
-		}()
-	}
+	skipMethods := cfg.SkipMethods
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		method := info.FullMethod
@@ -162,99 +70,37 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 			}
 		}
 
-		tracker, ok := registry.Get(method)
-		if !ok {
-			tracker = floodgate.NewTracker(
-				floodgate.WithAlpha(cfg.TrackerAlpha),
-				floodgate.WithWindowSize(cfg.TrackerWindowSize),
-				floodgate.WithPercentiles(cfg.TrackerSampleSize),
-			)
-			registry.Add(method, tracker)
-		}
-
-		if !circuitBreaker.Allow() {
-			_ = grpc.SetTrailer(ctx, retryAfterCircuit) //nolint:errcheck // Trailer is best-effort
-			logger.WarnContext(ctx, "circuit breaker open", "method", method)
-			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
-
-			// Record rejected request
-			metrics.RecordRequest(ctx, floodgate.RequestLabels{
-				Method: method,
-				Level:  floodgate.Emergency,
-				Result: "rejected",
-			}, 0, true)
-
-			return nil, status.Errorf(codes.Unavailable, "service circuit breaker open")
-		}
-
-		stats := tracker.Value()
-		decision := algo.Decide(stats)
-
-		var rejected bool
-
-		// Check if algorithm decided to reject
-		if decision.Reject {
+		// Check backpressure using core
+		result, err := bpCore.CheckBackpressure(ctx, method)
+		if err != nil {
+			// Determine retry-after based on decision level
 			var retryAfter md.MD
-			switch decision.Level {
+			switch result.Decision.Level {
 			case floodgate.Emergency:
 				retryAfter = retryAfterEmergency
 			case floodgate.Critical:
 				retryAfter = retryAfterCritical
 			default:
-				// For custom algorithms that reject at other levels (Warning/Moderate),
-				// use Emergency retry time as a conservative default
-				retryAfter = retryAfterEmergency
+				retryAfter = retryAfterCircuit
 			}
 
-			circuitBreaker.RecordFailure()
 			_ = grpc.SetTrailer(ctx, retryAfter) //nolint:errcheck // Trailer is best-effort
-			logger.ErrorContext(ctx, "backpressure rejection",
-				"method", method,
-				"level", decision.Level.String(),
-				"ema", stats.EMA,
-				"p95", stats.P95,
-				"p99", stats.P99)
-			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
-			metrics.RecordRequest(ctx, floodgate.RequestLabels{
-				Method: method,
-				Level:  decision.Level,
-				Result: "rejected",
-			}, 0, true)
-			return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - %s backpressure", decision.Level.String())
+
+			// Return appropriate error
+			if result.Decision.Level == floodgate.Emergency {
+				return nil, status.Errorf(codes.ResourceExhausted, "service overloaded - %s backpressure", result.Decision.Level.String())
+			}
+			return nil, status.Errorf(codes.Unavailable, "service circuit breaker open")
 		}
 
-		// Log warnings for elevated backpressure (not rejecting)
-		switch decision.Level {
-		case floodgate.Warning, floodgate.Moderate:
-			logger.WarnContext(ctx, "backpressure detected",
-				"level", decision.Level.String(),
-				"method", method,
-				"ema", stats.EMA,
-				"p95", stats.P95,
-				"p99", stats.P99)
-
-		case floodgate.Normal:
-			circuitBreaker.RecordSuccess()
-			metrics.RecordCircuitBreakerState(method, circuitBreaker.State())
-		}
-
+		// Execute handler and record latency
 		start := time.Now()
-		resp, err := handler(ctx, req)
+		resp, handlerErr := handler(ctx, req)
 		latency := time.Since(start)
 
-		dispatcher.Emit(tracker, latency)
+		// Record latency via core
+		bpCore.RecordLatency(ctx, result, latency, handlerErr)
 
-		// Record successful request completion
-		result := "success"
-		if err != nil {
-			result = "error"
-		}
-		metrics.RecordRequest(ctx, floodgate.RequestLabels{
-			Method: method,
-			Level:  decision.Level,
-			Result: result,
-		}, latency, rejected)
-
-		return resp, err
+		return resp, handlerErr
 	}
 }

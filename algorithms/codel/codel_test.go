@@ -571,7 +571,7 @@ func TestAlgorithm_FirstAboveReset_BugFix(t *testing.T) {
 		t.Error("Should not reject when below target")
 	}
 
-	// CRITICAL: firstAbove MUST be reset here
+	// Verify firstAbove is reset
 	algo.mu.Lock()
 	firstAbove := algo.firstAbove
 	algo.mu.Unlock()
