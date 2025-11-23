@@ -13,47 +13,20 @@ import (
 
 // Config holds the configuration for BackpressureCore.
 type Config struct {
-	// Algorithm determines backpressure decisions
-	Algorithm floodgate.Algorithm
-
-	// Logger for backpressure events
-	Logger floodgate.Logger
-
-	// Metrics collector for observability
-	Metrics floodgate.MetricsCollector
-
-	// CacheTTL is how long to keep idle route trackers
-	CacheTTL time.Duration
-
-	// CircuitBreakerTimeout is how long circuit stays open
-	CircuitBreakerTimeout time.Duration
-
-	// MetricsInterval is how often to emit periodic metrics
-	MetricsInterval time.Duration
-
-	// CacheSize is the maximum number of tracked routes/methods
-	CacheSize int
-
-	// DispatcherBufferSize is the async event queue size
-	DispatcherBufferSize int
-
-	// CircuitBreakerMaxFailures is failures before opening circuit
-	CircuitBreakerMaxFailures int
-
-	// CircuitBreakerSuccessThreshold is successes needed to close circuit
+	Algorithm                      floodgate.Algorithm
+	Logger                         floodgate.Logger
+	Metrics                        floodgate.MetricsCollector
+	CircuitBreakerMaxFailures      int
+	CircuitBreakerTimeout          time.Duration
+	MetricsInterval                time.Duration
+	CacheSize                      int
+	DispatcherBufferSize           int
+	CacheTTL                       time.Duration
 	CircuitBreakerSuccessThreshold int
-
-	// TrackerWindowSize is the EMA window size
-	TrackerWindowSize int
-
-	// TrackerSampleSize is the percentile sample buffer size
-	TrackerSampleSize int
-
-	// TrackerAlpha is the EMA smoothing factor (0-1)
-	TrackerAlpha float32
-
-	// EnableMetrics controls periodic metrics emission
-	EnableMetrics bool
+	TrackerWindowSize              int
+	TrackerSampleSize              int
+	TrackerAlpha                   float32
+	EnableMetrics                  bool
 }
 
 // BackpressureCore contains the protocol-agnostic backpressure logic.
@@ -72,8 +45,8 @@ type BackpressureCore struct {
 // DecisionResult contains the backpressure decision and associated tracker.
 type DecisionResult struct {
 	Tracker  floodgate.Tracker[time.Duration, floodgate.Stats]
-	Stats    floodgate.Stats
 	Decision floodgate.Decision
+	Stats    floodgate.Stats
 }
 
 // NewBackpressureCore creates a new protocol-agnostic backpressure core.
