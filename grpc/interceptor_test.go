@@ -222,6 +222,41 @@ func TestInterceptor_SkipMethods(t *testing.T) {
 	}
 }
 
+// TestMatchMethod tests the method matching function.
+func TestMatchMethod(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		method  string
+		pattern string
+		want    bool
+	}{
+		// Exact matches
+		{"exact match", "/pkg.Service/Method", "/pkg.Service/Method", true},
+		{"exact no match", "/pkg.Service/Other", "/pkg.Service/Method", false},
+
+		// Prefix matches with *
+		{"prefix match health", "/grpc.health.v1/Check", "/grpc.health.*", true},
+		{"prefix match reflection", "/grpc.reflection.v1alpha/Info", "/grpc.reflection.*", true},
+		{"prefix no match", "/myapp.Service/Method", "/grpc.health.*", false},
+
+		// Edge cases
+		{"empty pattern", "/pkg.Service/Method", "", false},
+		{"empty method", "", "/pkg.Service/Method", false},
+		{"just star", "/anything", "*", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := matchMethod(tt.method, tt.pattern); got != tt.want {
+				t.Errorf("matchMethod(%q, %q) = %v, want %v", tt.method, tt.pattern, got, tt.want)
+			}
+		})
+	}
+}
+
 // Test circuit breaker integration.
 func TestInterceptor_CircuitBreaker(_ *testing.T) {
 	ctx := context.Background()

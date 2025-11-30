@@ -5,12 +5,24 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/mushtruk/floodgate"
 	"github.com/mushtruk/floodgate/internal/core"
 )
+
+// matchPath checks if a request path matches a skip pattern.
+// Patterns ending with "*" match as prefixes (e.g., "/api/*" matches "/api/users").
+// All other patterns require an exact match (e.g., "/health" matches only "/health").
+func matchPath(path, pattern string) bool {
+	if len(pattern) > 0 && pattern[len(pattern)-1] == '*' {
+		// Prefix match: "/api/*" matches "/api/anything"
+		prefix := pattern[:len(pattern)-1]
+		return len(path) >= len(prefix) && path[:len(prefix)] == prefix
+	}
+	// Exact match
+	return path == pattern
+}
 
 // Middleware creates an HTTP middleware with adaptive backpressure.
 //
@@ -57,9 +69,10 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 
-			// Fast prefix check (optimized for small n=2-3 prefixes)
-			for _, skipPrefix := range skipPaths {
-				if strings.HasPrefix(path, skipPrefix) {
+			// Check if path should be skipped
+			// Supports exact match (e.g., "/health") or prefix match (e.g., "/api/*")
+			for _, skipPath := range skipPaths {
+				if matchPath(path, skipPath) {
 					next.ServeHTTP(w, r)
 					return
 				}

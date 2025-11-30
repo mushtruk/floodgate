@@ -46,8 +46,8 @@ func DefaultConfig() Config {
 		DispatcherBufferSize: 1024,
 		Thresholds:           floodgate.DefaultThresholds(),
 		SkipMethods: []string{
-			"/grpc.health.",
-			"/grpc.reflection.",
+			"/grpc.health.*",
+			"/grpc.reflection.*",
 		},
 		EnableMetrics:   true,
 		MetricsInterval: 1 * time.Minute,
