@@ -19,7 +19,7 @@ var errHTTPStatus = errors.New("http error status")
 // Patterns ending with "*" match as prefixes (e.g., "/api/*" matches "/api/users").
 // All other patterns require an exact match (e.g., "/health" matches only "/health").
 func matchPath(path, pattern string) bool {
-	if len(pattern) > 0 && pattern[len(pattern)-1] == '*' {
+	if pattern != "" && pattern[len(pattern)-1] == '*' {
 		// Prefix match: "/api/*" matches "/api/anything"
 		prefix := pattern[:len(pattern)-1]
 		return len(path) >= len(prefix) && path[:len(prefix)] == prefix

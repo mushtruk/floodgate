@@ -18,7 +18,7 @@ import (
 // Patterns ending with "*" match as prefixes (e.g., "/grpc.health.*" matches "/grpc.health.v1/Check").
 // All other patterns require an exact match.
 func matchMethod(method, pattern string) bool {
-	if len(pattern) > 0 && pattern[len(pattern)-1] == '*' {
+	if pattern != "" && pattern[len(pattern)-1] == '*' {
 		// Prefix match: "/grpc.health.*" matches "/grpc.health.v1/Check"
 		prefix := pattern[:len(pattern)-1]
 		return len(method) >= len(prefix) && method[:len(prefix)] == prefix

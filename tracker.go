@@ -7,6 +7,7 @@ package floodgate
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -73,11 +74,14 @@ type emaTracker struct {
 	mu           sync.RWMutex
 	percentileMu sync.RWMutex
 
-	windowSize           int
-	sampleSize           int
-	sampleIndex          int
-	percentileEnabled    bool
-	percentileCacheValid bool
+	// percentileCacheValid uses atomic operations to allow lock-free reads
+	// in the fast path. 0 = invalid, 1 = valid.
+	percentileCacheValid atomic.Uint32
+
+	windowSize        int
+	sampleSize        int
+	sampleIndex       int
+	percentileEnabled bool
 }
 
 // NewTracker creates a new latency tracker with the given options.
@@ -133,8 +137,8 @@ func (t *emaTracker) Process(duration time.Duration) {
 		}
 
 		samplesSinceLastCalc := (t.sampleIndex - int(t.lastPercentileCalcAt) + t.sampleSize) % t.sampleSize
-		if samplesSinceLastCalc > t.sampleSize/10 || !t.percentileCacheValid {
-			t.percentileCacheValid = false
+		if samplesSinceLastCalc > t.sampleSize/10 || t.percentileCacheValid.Load() == 0 {
+			t.percentileCacheValid.Store(0) // Invalidate cache
 		}
 
 		t.percentileMu.Unlock()
@@ -189,7 +193,7 @@ func (t *emaTracker) calculatePercentiles() (p50, p95, p99 time.Duration) {
 	defer t.percentileMu.Unlock()
 
 	// Return cached values if still valid
-	if t.percentileCacheValid {
+	if t.percentileCacheValid.Load() == 1 {
 		return time.Duration(t.cachedP50),
 			time.Duration(t.cachedP95),
 			time.Duration(t.cachedP99)
@@ -236,7 +240,7 @@ func (t *emaTracker) calculatePercentiles() (p50, p95, p99 time.Duration) {
 	t.cachedP95 = sortedSamples[p95Index]
 	t.cachedP99 = sortedSamples[p99Index]
 	t.lastPercentileCalcAt = int64(t.sampleIndex)
-	t.percentileCacheValid = true
+	t.percentileCacheValid.Store(1) // Mark cache as valid
 
 	return time.Duration(t.cachedP50),
 		time.Duration(t.cachedP95),
