@@ -53,6 +53,7 @@ func DefaultThresholds() Thresholds {
 	}
 }
 
+//nolint:govet // fieldalignment: struct layout prioritizes logical grouping over size
 type emaTracker struct {
 	emaSlice   []int64
 	samples    []int64

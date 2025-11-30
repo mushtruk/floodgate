@@ -43,6 +43,8 @@ type BackpressureCore struct {
 }
 
 // DecisionResult contains the backpressure decision and associated tracker.
+//
+//nolint:govet // fieldalignment: struct layout prioritizes logical grouping over size
 type DecisionResult struct {
 	Tracker  floodgate.Tracker[time.Duration, floodgate.Stats]
 	Stats    floodgate.Stats

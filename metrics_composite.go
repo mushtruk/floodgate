@@ -19,6 +19,8 @@ import (
 //	    datadog.NewCollector(),
 //	    customLogger,
 //	)
+//
+//nolint:govet // fieldalignment: struct layout prioritizes logical grouping over size
 type CompositeMetrics struct {
 	mu         sync.RWMutex
 	collectors []MetricsCollector
