@@ -86,7 +86,9 @@ func WithQueueSize(n int) QueueOption {
 // plus queue-specific options (WithWorkers, WithQueueSize).
 //
 // You must call Start() to begin processing requests and Stop() when done.
-func NewQueueAlgorithm(opts ...interface{}) *QueueAlgorithm {
+//
+// Returns an error if configuration is invalid (e.g., non-positive delays).
+func NewQueueAlgorithm(opts ...interface{}) (*QueueAlgorithm, error) {
 	q := &QueueAlgorithm{
 		queue:    make(chan QueuedRequest, 1000),
 		workers:  100,
@@ -105,9 +107,13 @@ func NewQueueAlgorithm(opts ...interface{}) *QueueAlgorithm {
 	}
 
 	// Create underlying CoDel algorithm
-	q.codel = NewAlgorithm(codelOpts...)
+	codel, err := NewAlgorithm(codelOpts...)
+	if err != nil {
+		return nil, err
+	}
+	q.codel = codel
 
-	return q
+	return q, nil
 }
 
 // Start begins processing queued requests with the configured worker pool.

@@ -102,7 +102,9 @@ func WithInterval(d time.Duration) Option {
 //   - Low-latency APIs: 2-5ms target
 //   - Standard APIs: 5-10ms target
 //   - Batch processing: 20-50ms target
-func NewAlgorithm(opts ...Option) *Algorithm {
+//
+// Returns an error if configuration is invalid (e.g., non-positive delays).
+func NewAlgorithm(opts ...Option) (*Algorithm, error) {
 	a := &Algorithm{
 		targetDelay: 5 * time.Millisecond,
 		interval:    100 * time.Millisecond,
@@ -114,17 +116,17 @@ func NewAlgorithm(opts ...Option) *Algorithm {
 
 	// Validate configuration to prevent division by zero
 	if a.targetDelay <= 0 {
-		panic("codel: targetDelay must be positive")
+		return nil, ErrInvalidTargetDelay
 	}
 	if a.interval <= 0 {
-		panic("codel: interval must be positive")
+		return nil, ErrInvalidInterval
 	}
 
 	// Cache nanoseconds for performance
 	a.intervalNs = a.interval.Nanoseconds()
 	a.targetDelayNs = a.targetDelay.Nanoseconds()
 
-	return a
+	return a, nil
 }
 
 // Decide implements floodgate.Algorithm using the CoDel control law.
