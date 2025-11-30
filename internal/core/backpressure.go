@@ -47,6 +47,7 @@ type DecisionResult struct {
 	Tracker  floodgate.Tracker[time.Duration, floodgate.Stats]
 	Stats    floodgate.Stats
 	Decision floodgate.Decision
+	RouteKey string // The route/method key for metrics labeling
 }
 
 // NewBackpressureCore creates a new protocol-agnostic backpressure core.
@@ -139,6 +140,7 @@ func (c *BackpressureCore) CheckBackpressure(ctx context.Context, routeKey strin
 			Decision: decision,
 			Tracker:  tracker,
 			Stats:    stats,
+			RouteKey: routeKey,
 		}, floodgate.ErrBackpressure
 	}
 
@@ -161,6 +163,7 @@ func (c *BackpressureCore) CheckBackpressure(ctx context.Context, routeKey strin
 		Decision: decision,
 		Tracker:  tracker,
 		Stats:    stats,
+		RouteKey: routeKey,
 	}, nil
 }
 
@@ -178,7 +181,7 @@ func (c *BackpressureCore) RecordLatency(ctx context.Context, result *DecisionRe
 	}
 
 	c.metrics.RecordRequest(ctx, floodgate.RequestLabels{
-		Method: "", // Filled by protocol adapter
+		Method: result.RouteKey,
 		Level:  result.Decision.Level,
 		Result: reqResult,
 	}, latency, result.Decision.Reject)
