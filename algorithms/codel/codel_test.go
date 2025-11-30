@@ -138,10 +138,8 @@ func TestAlgorithm_EntersDropping_PersistentDelay(t *testing.T) {
 	}
 
 	// First call - above target but not persistent yet
-	// Manually set firstAbove to simulate time passing
-	algo.mu.Lock()
-	algo.firstAbove = time.Now().Add(-150 * time.Millisecond) // Past the interval
-	algo.mu.Unlock()
+	// Manually set firstAboveNs to simulate time passing (150ms in the past)
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-150*time.Millisecond).UnixNano())
 
 	decision := algo.Decide(stats)
 
@@ -184,7 +182,7 @@ func TestAlgorithm_ExitsDropping_DelayImproves(t *testing.T) {
 	algo.dropping = true
 	atomic.StoreUint32(&algo.droppingFlag, 1)
 	algo.count = 3
-	algo.firstAbove = time.Now().Add(-200 * time.Millisecond)
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-200*time.Millisecond).UnixNano())
 	algo.mu.Unlock()
 
 	// Now latency improves below target
@@ -202,15 +200,15 @@ func TestAlgorithm_ExitsDropping_DelayImproves(t *testing.T) {
 
 	algo.mu.Lock()
 	dropping := algo.dropping
-	firstAbove := algo.firstAbove
 	algo.mu.Unlock()
+	firstAboveNs := atomic.LoadInt64(&algo.firstAboveNs)
 
 	if dropping {
 		t.Error("Algorithm should exit dropping state when delay improves")
 	}
 
-	if !firstAbove.IsZero() {
-		t.Error("Algorithm should reset firstAbove when delay improves")
+	if firstAboveNs != 0 {
+		t.Error("Algorithm should reset firstAboveNs when delay improves")
 	}
 }
 
@@ -414,9 +412,7 @@ func TestAlgorithm_DroppingEpisode_MultipleDrops(t *testing.T) {
 	}
 
 	// Simulate time has passed beyond interval
-	algo.mu.Lock()
-	algo.firstAbove = time.Now().Add(-150 * time.Millisecond)
-	algo.mu.Unlock()
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-150*time.Millisecond).UnixNano())
 
 	// First drop - enter dropping mode
 	decision1 := algo.Decide(stats)
@@ -475,7 +471,7 @@ func BenchmarkCoDel_Decide_HighLatency(b *testing.B) {
 	algo.dropping = true
 	atomic.StoreUint32(&algo.droppingFlag, 1)
 	algo.count = 5
-	algo.firstAbove = time.Now().Add(-200 * time.Millisecond)
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-200*time.Millisecond).UnixNano())
 	algo.dropNext = time.Now().Add(50 * time.Millisecond)
 	algo.mu.Unlock()
 
@@ -600,10 +596,8 @@ func TestAlgorithm_FirstAboveReset_BugFix(t *testing.T) {
 		P99: 70 * time.Millisecond,
 	}
 
-	// Simulate firstAbove being set 50ms ago
-	algo.mu.Lock()
-	algo.firstAbove = time.Now().Add(-50 * time.Millisecond)
-	algo.mu.Unlock()
+	// Simulate firstAboveNs being set 50ms ago
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-50*time.Millisecond).UnixNano())
 
 	decision := algo.Decide(highStats)
 	if decision.Reject {
@@ -622,21 +616,16 @@ func TestAlgorithm_FirstAboveReset_BugFix(t *testing.T) {
 		t.Error("Should not reject when below target")
 	}
 
-	// Verify firstAbove is reset
-	algo.mu.Lock()
-	firstAbove := algo.firstAbove
-	algo.mu.Unlock()
-
-	if !firstAbove.IsZero() {
-		t.Error("BUG: firstAbove not reset when delay drops below target - this will cause incorrect dropping mode entry")
+	// Verify firstAboveNs is reset
+	firstAboveNs := atomic.LoadInt64(&algo.firstAboveNs)
+	if firstAboveNs != 0 {
+		t.Error("BUG: firstAboveNs not reset when delay drops below target - this will cause incorrect dropping mode entry")
 	}
 
 	// Phase 3: Another brief high latency spike
 	// Without the fix, this would use accumulated time from Phase 1
 	// and incorrectly enter dropping mode
-	algo.mu.Lock()
-	algo.firstAbove = time.Now().Add(-50 * time.Millisecond)
-	algo.mu.Unlock()
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-50*time.Millisecond).UnixNano())
 
 	decision = algo.Decide(highStats)
 	if decision.Reject {
