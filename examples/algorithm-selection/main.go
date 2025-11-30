@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/mushtruk/floodgate"
-	fhttp "github.com/mushtruk/floodgate/http"
 	"github.com/mushtruk/floodgate/algorithms/codel"
+	fhttp "github.com/mushtruk/floodgate/http"
 )
 
 func main() {
@@ -48,24 +48,23 @@ func main() {
 	}
 
 	// Create algorithm from type-safe config
-	algo := codel.NewAlgorithmFromConfig(cfg)
+	algo, err := codel.NewAlgorithmFromConfig(cfg)
+	if err != nil {
+		log.Fatalf("Failed to create algorithm: %v", err)
+	}
 
-	// Type assertion to check what we got
-	switch a := algo.(type) {
+	// Log the algorithm type
+	switch algo.(type) {
 	case *codel.Algorithm:
 		log.Printf("Created: Standard CoDel")
-		startStandardServer(ctx, a)
-	case *codel.QueueAlgorithm:
-		log.Printf("Created: Queue CoDel")
-		a.Start()
-		defer a.Stop()
-		startQueueServer(ctx, a)
 	case *floodgate.ThresholdAlgorithm:
 		log.Printf("Created: Threshold")
-		startStandardServer(ctx, a)
 	default:
-		log.Fatalf("Unexpected algorithm type: %T", a)
+		log.Printf("Created: Algorithm of type %T", algo)
 	}
+
+	// Start server with the selected algorithm
+	startStandardServer(ctx, algo)
 }
 
 func startStandardServer(ctx context.Context, algorithm floodgate.Algorithm) {
@@ -100,38 +99,3 @@ func startStandardServer(ctx context.Context, algorithm floodgate.Algorithm) {
 	}
 }
 
-func startQueueServer(ctx context.Context, queueAlgo *codel.QueueAlgorithm) {
-	mux := http.NewServeMux()
-
-	// Queue algorithm requires wrapping handlers
-	mux.HandleFunc("/fast", func(w http.ResponseWriter, r *http.Request) {
-		err := queueAlgo.Enqueue(r.Context(), func(ctx context.Context) error {
-			fmt.Fprintf(w, "Fast endpoint (queued)\n")
-			return nil
-		})
-		if err != nil {
-			http.Error(w, "Service overloaded", http.StatusServiceUnavailable)
-		}
-	})
-
-	mux.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) {
-		err := queueAlgo.Enqueue(r.Context(), func(ctx context.Context) error {
-			time.Sleep(100 * time.Millisecond)
-			fmt.Fprintf(w, "Slow endpoint (queued)\n")
-			return nil
-		})
-		if err != nil {
-			http.Error(w, "Service overloaded", http.StatusServiceUnavailable)
-		}
-	})
-
-	server := &http.Server{
-		Addr:    ":8080",
-		Handler: mux,
-	}
-
-	log.Printf("Server starting on :8080 (queue mode)")
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
-	}
-}

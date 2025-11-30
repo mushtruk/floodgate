@@ -100,10 +100,13 @@ func TimeoutMiddleware(timeout time.Duration) Middleware {
 // BackpressureMiddleware demonstrates combining backpressure with other middleware.
 func BackpressureMiddleware(ctx context.Context) Middleware {
 	// Create CoDel algorithm for adaptive backpressure
-	algo := codel.NewAlgorithm(
+	algo, err := codel.NewAlgorithm(
 		codel.WithTargetDelay(5*time.Millisecond),
 		codel.WithInterval(100*time.Millisecond),
 	)
+	if err != nil {
+		log.Fatalf("Failed to create CoDel algorithm: %v", err)
+	}
 
 	cfg := fhttp.DefaultConfig()
 	cfg.Algorithm = algo
@@ -119,11 +122,11 @@ func main() {
 	// Build middleware chain
 	// Order matters: outer middleware executes first (top-down for requests)
 	chain := Chain(
-		RecoveryMiddleware(),           // 1. Catch panics (outermost)
-		LoggingMiddleware(),            // 2. Log requests
-		CORSMiddleware(),               // 3. Add CORS headers
+		RecoveryMiddleware(),              // 1. Catch panics (outermost)
+		LoggingMiddleware(),               // 2. Log requests
+		CORSMiddleware(),                  // 3. Add CORS headers
 		TimeoutMiddleware(30*time.Second), // 4. Enforce timeouts
-		BackpressureMiddleware(ctx),    // 5. Apply backpressure (innermost before handler)
+		BackpressureMiddleware(ctx),       // 5. Apply backpressure (innermost before handler)
 	)
 
 	// Application routes
