@@ -179,3 +179,73 @@ func TestCompositeMetrics_EmptyComposite(t *testing.T) {
 	composite.RecordDispatcherStats(1, 10)
 	composite.RecordCircuitBreakerState("test", StateClosed)
 }
+
+func TestCompositeMetrics_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	composite := NewCompositeMetrics()
+
+	// Add initial collectors
+	for i := 0; i < 5; i++ {
+		composite.Add(&MockMetricsCollector{})
+	}
+
+	ctx := context.Background()
+	labels := RequestLabels{Method: "test", Level: Normal, Result: "success"}
+
+	// Run concurrent operations
+	done := make(chan struct{})
+
+	// Writers: Add/Remove collectors
+	go func() {
+		for i := 0; i < 100; i++ {
+			mock := &MockMetricsCollector{}
+			composite.Add(mock)
+			composite.Remove(mock)
+		}
+		done <- struct{}{}
+	}()
+
+	// Readers: Record metrics
+	go func() {
+		for i := 0; i < 1000; i++ {
+			composite.RecordRequest(ctx, labels, 100*time.Millisecond, false)
+		}
+		done <- struct{}{}
+	}()
+
+	go func() {
+		for i := 0; i < 1000; i++ {
+			composite.RecordCacheSize(i)
+		}
+		done <- struct{}{}
+	}()
+
+	go func() {
+		for i := 0; i < 1000; i++ {
+			composite.RecordDispatcherStats(uint64(i), uint64(i*10))
+		}
+		done <- struct{}{}
+	}()
+
+	go func() {
+		for i := 0; i < 1000; i++ {
+			composite.RecordCircuitBreakerState("method", StateClosed)
+		}
+		done <- struct{}{}
+	}()
+
+	go func() {
+		for i := 0; i < 1000; i++ {
+			_ = composite.Count()
+		}
+		done <- struct{}{}
+	}()
+
+	// Wait for all goroutines
+	for i := 0; i < 6; i++ {
+		<-done
+	}
+
+	// If we get here without a data race, the test passes
+}
