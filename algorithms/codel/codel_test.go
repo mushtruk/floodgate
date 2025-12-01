@@ -12,7 +12,10 @@ import (
 func TestNewAlgorithm_Defaults(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm()
+	algo, err := NewAlgorithm()
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v, want nil", err)
+	}
 
 	if algo.targetDelay != 5*time.Millisecond {
 		t.Errorf("NewAlgorithm() targetDelay = %v, want %v", algo.targetDelay, 5*time.Millisecond)
@@ -37,10 +40,13 @@ func TestNewAlgorithm_CustomOptions(t *testing.T) {
 	targetDelay := 10 * time.Millisecond
 	interval := 200 * time.Millisecond
 
-	algo := NewAlgorithm(
+	algo, err := NewAlgorithm(
 		WithTargetDelay(targetDelay),
 		WithInterval(interval),
 	)
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v, want nil", err)
+	}
 
 	if algo.targetDelay != targetDelay {
 		t.Errorf("NewAlgorithm() targetDelay = %v, want %v", algo.targetDelay, targetDelay)
@@ -51,46 +57,49 @@ func TestNewAlgorithm_CustomOptions(t *testing.T) {
 	}
 }
 
-func TestNewAlgorithm_InvalidTargetDelay_Panics(t *testing.T) {
+func TestNewAlgorithm_InvalidTargetDelay_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("NewAlgorithm() with zero targetDelay should panic")
-		}
-	}()
-
-	_ = NewAlgorithm(WithTargetDelay(0))
+	_, err := NewAlgorithm(WithTargetDelay(0))
+	if err != ErrInvalidTargetDelay {
+		t.Errorf("NewAlgorithm() with zero targetDelay error = %v, want %v", err, ErrInvalidTargetDelay)
+	}
 }
 
-func TestNewAlgorithm_InvalidInterval_Panics(t *testing.T) {
+func TestNewAlgorithm_InvalidInterval_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("NewAlgorithm() with zero interval should panic")
-		}
-	}()
-
-	_ = NewAlgorithm(WithInterval(0))
+	_, err := NewAlgorithm(WithInterval(0))
+	if err != ErrInvalidInterval {
+		t.Errorf("NewAlgorithm() with zero interval error = %v, want %v", err, ErrInvalidInterval)
+	}
 }
 
-func TestNewAlgorithm_NegativeTargetDelay_Panics(t *testing.T) {
+func TestNewAlgorithm_NegativeTargetDelay_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("NewAlgorithm() with negative targetDelay should panic")
-		}
-	}()
+	_, err := NewAlgorithm(WithTargetDelay(-1 * time.Millisecond))
+	if err != ErrInvalidTargetDelay {
+		t.Errorf("NewAlgorithm() with negative targetDelay error = %v, want %v", err, ErrInvalidTargetDelay)
+	}
+}
 
-	_ = NewAlgorithm(WithTargetDelay(-1 * time.Millisecond))
+func TestNewAlgorithm_NegativeInterval_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewAlgorithm(WithInterval(-1 * time.Millisecond))
+	if err != ErrInvalidInterval {
+		t.Errorf("NewAlgorithm() with negative interval error = %v, want %v", err, ErrInvalidInterval)
+	}
 }
 
 func TestAlgorithm_InitialState_NoRejection(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm()
+	algo, err := NewAlgorithm()
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	// Low latency should not trigger rejection
 	stats := floodgate.Stats{
@@ -113,10 +122,13 @@ func TestAlgorithm_InitialState_NoRejection(t *testing.T) {
 func TestAlgorithm_EntersDropping_PersistentDelay(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm(
+	algo, err := NewAlgorithm(
 		WithTargetDelay(5*time.Millisecond),
 		WithInterval(100*time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	// High latency exceeding target
 	stats := floodgate.Stats{
@@ -126,10 +138,8 @@ func TestAlgorithm_EntersDropping_PersistentDelay(t *testing.T) {
 	}
 
 	// First call - above target but not persistent yet
-	// Manually set firstAbove to simulate time passing
-	algo.mu.Lock()
-	algo.firstAbove = time.Now().Add(-150 * time.Millisecond) // Past the interval
-	algo.mu.Unlock()
+	// Manually set firstAboveNs to simulate time passing (150ms in the past)
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-150*time.Millisecond).UnixNano())
 
 	decision := algo.Decide(stats)
 
@@ -159,17 +169,20 @@ func TestAlgorithm_EntersDropping_PersistentDelay(t *testing.T) {
 func TestAlgorithm_ExitsDropping_DelayImproves(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm(
+	algo, err := NewAlgorithm(
 		WithTargetDelay(5*time.Millisecond),
 		WithInterval(100*time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	// Set up dropping state
 	algo.mu.Lock()
 	algo.dropping = true
 	atomic.StoreUint32(&algo.droppingFlag, 1)
 	algo.count = 3
-	algo.firstAbove = time.Now().Add(-200 * time.Millisecond)
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-200*time.Millisecond).UnixNano())
 	algo.mu.Unlock()
 
 	// Now latency improves below target
@@ -187,24 +200,27 @@ func TestAlgorithm_ExitsDropping_DelayImproves(t *testing.T) {
 
 	algo.mu.Lock()
 	dropping := algo.dropping
-	firstAbove := algo.firstAbove
 	algo.mu.Unlock()
+	firstAboveNs := atomic.LoadInt64(&algo.firstAboveNs)
 
 	if dropping {
 		t.Error("Algorithm should exit dropping state when delay improves")
 	}
 
-	if !firstAbove.IsZero() {
-		t.Error("Algorithm should reset firstAbove when delay improves")
+	if firstAboveNs != 0 {
+		t.Error("Algorithm should reset firstAboveNs when delay improves")
 	}
 }
 
 func TestAlgorithm_ControlLaw_IncreasingDropRate(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm(
+	algo, err := NewAlgorithm(
 		WithInterval(100 * time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	now := time.Now()
 
@@ -239,9 +255,12 @@ func TestAlgorithm_ControlLaw_IncreasingDropRate(t *testing.T) {
 func TestAlgorithm_MapToLevel_RatioBased(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm(
+	algo, err := NewAlgorithm(
 		WithTargetDelay(5 * time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	tests := []struct {
 		name        string
@@ -297,9 +316,12 @@ func TestAlgorithm_MapToLevel_RatioBased(t *testing.T) {
 func TestAlgorithm_UsesP95_FallbackToEMA(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm(
+	algo, err := NewAlgorithm(
 		WithTargetDelay(5 * time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	tests := []struct {
 		name      string
@@ -343,7 +365,10 @@ func TestAlgorithm_UsesP95_FallbackToEMA(t *testing.T) {
 func TestAlgorithm_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm()
+	algo, err := NewAlgorithm()
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	stats := floodgate.Stats{
 		EMA: 10 * time.Millisecond,
@@ -371,10 +396,13 @@ func TestAlgorithm_ConcurrentAccess(t *testing.T) {
 func TestAlgorithm_DroppingEpisode_MultipleDrops(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm(
+	algo, err := NewAlgorithm(
 		WithTargetDelay(5*time.Millisecond),
 		WithInterval(100*time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	// Set up persistent high latency
 	stats := floodgate.Stats{
@@ -384,9 +412,7 @@ func TestAlgorithm_DroppingEpisode_MultipleDrops(t *testing.T) {
 	}
 
 	// Simulate time has passed beyond interval
-	algo.mu.Lock()
-	algo.firstAbove = time.Now().Add(-150 * time.Millisecond)
-	algo.mu.Unlock()
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-150*time.Millisecond).UnixNano())
 
 	// First drop - enter dropping mode
 	decision1 := algo.Decide(stats)
@@ -416,7 +442,10 @@ func TestAlgorithm_DroppingEpisode_MultipleDrops(t *testing.T) {
 
 // BenchmarkCoDel_Decide benchmarks the CoDel algorithm decision performance.
 func BenchmarkCoDel_Decide(b *testing.B) {
-	algo := NewAlgorithm()
+	algo, err := NewAlgorithm()
+	if err != nil {
+		b.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	stats := floodgate.Stats{
 		EMA: 10 * time.Millisecond,
@@ -432,14 +461,17 @@ func BenchmarkCoDel_Decide(b *testing.B) {
 
 // BenchmarkCoDel_Decide_HighLatency benchmarks CoDel with high latency (dropping mode).
 func BenchmarkCoDel_Decide_HighLatency(b *testing.B) {
-	algo := NewAlgorithm()
+	algo, err := NewAlgorithm()
+	if err != nil {
+		b.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	// Simulate being in dropping mode
 	algo.mu.Lock()
 	algo.dropping = true
 	atomic.StoreUint32(&algo.droppingFlag, 1)
 	algo.count = 5
-	algo.firstAbove = time.Now().Add(-200 * time.Millisecond)
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-200*time.Millisecond).UnixNano())
 	algo.dropNext = time.Now().Add(50 * time.Millisecond)
 	algo.mu.Unlock()
 
@@ -457,7 +489,10 @@ func BenchmarkCoDel_Decide_HighLatency(b *testing.B) {
 
 // BenchmarkCoDel_ControlLaw benchmarks the control law calculation.
 func BenchmarkCoDel_ControlLaw(b *testing.B) {
-	algo := NewAlgorithm()
+	algo, err := NewAlgorithm()
+	if err != nil {
+		b.Fatalf("NewAlgorithm() error = %v", err)
+	}
 	now := time.Now()
 
 	algo.mu.Lock()
@@ -474,7 +509,10 @@ func BenchmarkCoDel_ControlLaw(b *testing.B) {
 
 // BenchmarkCoDel_MapToLevel benchmarks level mapping.
 func BenchmarkCoDel_MapToLevel(b *testing.B) {
-	algo := NewAlgorithm()
+	algo, err := NewAlgorithm()
+	if err != nil {
+		b.Fatalf("NewAlgorithm() error = %v", err)
+	}
 	sojournTime := 15 * time.Millisecond
 
 	b.ResetTimer()
@@ -492,7 +530,10 @@ func BenchmarkCoDel_vs_Threshold(b *testing.B) {
 	}
 
 	b.Run("CoDel", func(b *testing.B) {
-		algo := NewAlgorithm()
+		algo, err := NewAlgorithm()
+		if err != nil {
+			b.Fatalf("NewAlgorithm() error = %v", err)
+		}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_ = algo.Decide(stats)
@@ -510,7 +551,10 @@ func BenchmarkCoDel_vs_Threshold(b *testing.B) {
 
 // BenchmarkCoDel_Allocation benchmarks memory allocation.
 func BenchmarkCoDel_Allocation(b *testing.B) {
-	algo := NewAlgorithm()
+	algo, err := NewAlgorithm()
+	if err != nil {
+		b.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	stats := floodgate.Stats{
 		EMA: 10 * time.Millisecond,
@@ -532,10 +576,13 @@ func BenchmarkCoDel_Allocation(b *testing.B) {
 func TestAlgorithm_FirstAboveReset_BugFix(t *testing.T) {
 	t.Parallel()
 
-	algo := NewAlgorithm(
+	algo, err := NewAlgorithm(
 		WithTargetDelay(5*time.Millisecond),
 		WithInterval(100*time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewAlgorithm() error = %v", err)
+	}
 
 	// Scenario: Traffic pattern with bursts
 	// 1. High latency for 50ms (not persistent enough to trigger dropping)
@@ -549,10 +596,8 @@ func TestAlgorithm_FirstAboveReset_BugFix(t *testing.T) {
 		P99: 70 * time.Millisecond,
 	}
 
-	// Simulate firstAbove being set 50ms ago
-	algo.mu.Lock()
-	algo.firstAbove = time.Now().Add(-50 * time.Millisecond)
-	algo.mu.Unlock()
+	// Simulate firstAboveNs being set 50ms ago
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-50*time.Millisecond).UnixNano())
 
 	decision := algo.Decide(highStats)
 	if decision.Reject {
@@ -571,21 +616,16 @@ func TestAlgorithm_FirstAboveReset_BugFix(t *testing.T) {
 		t.Error("Should not reject when below target")
 	}
 
-	// Verify firstAbove is reset
-	algo.mu.Lock()
-	firstAbove := algo.firstAbove
-	algo.mu.Unlock()
-
-	if !firstAbove.IsZero() {
-		t.Error("BUG: firstAbove not reset when delay drops below target - this will cause incorrect dropping mode entry")
+	// Verify firstAboveNs is reset
+	firstAboveNs := atomic.LoadInt64(&algo.firstAboveNs)
+	if firstAboveNs != 0 {
+		t.Error("BUG: firstAboveNs not reset when delay drops below target - this will cause incorrect dropping mode entry")
 	}
 
 	// Phase 3: Another brief high latency spike
 	// Without the fix, this would use accumulated time from Phase 1
 	// and incorrectly enter dropping mode
-	algo.mu.Lock()
-	algo.firstAbove = time.Now().Add(-50 * time.Millisecond)
-	algo.mu.Unlock()
+	atomic.StoreInt64(&algo.firstAboveNs, time.Now().Add(-50*time.Millisecond).UnixNano())
 
 	decision = algo.Decide(highStats)
 	if decision.Reject {

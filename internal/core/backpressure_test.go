@@ -182,6 +182,11 @@ func TestBackpressureCore_RecordLatency(t *testing.T) {
 		t.Fatalf("CheckBackpressure failed: %v", err)
 	}
 
+	// Verify RouteKey is populated in DecisionResult
+	if result.RouteKey != "test.method" {
+		t.Errorf("RouteKey = %q, want %q", result.RouteKey, "test.method")
+	}
+
 	// Record latency
 	core.RecordLatency(ctx, result, 100*time.Millisecond, nil)
 

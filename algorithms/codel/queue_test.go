@@ -14,7 +14,10 @@ import (
 func TestNewQueueAlgorithm_Defaults(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm()
+	q, err := NewQueueAlgorithm()
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 
 	if q.workers != 100 {
 		t.Errorf("NewQueueAlgorithm() workers = %d, want 100", q.workers)
@@ -32,12 +35,15 @@ func TestNewQueueAlgorithm_Defaults(t *testing.T) {
 func TestNewQueueAlgorithm_CustomOptions(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(50),
 		WithQueueSize(500),
 		WithTargetDelay(10*time.Millisecond),
 		WithInterval(200*time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 
 	if q.workers != 50 {
 		t.Errorf("NewQueueAlgorithm() workers = %d, want 50", q.workers)
@@ -52,10 +58,22 @@ func TestNewQueueAlgorithm_CustomOptions(t *testing.T) {
 	}
 }
 
+func TestNewQueueAlgorithm_InvalidConfig_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewQueueAlgorithm(WithTargetDelay(0))
+	if err != ErrInvalidTargetDelay {
+		t.Errorf("NewQueueAlgorithm() with zero targetDelay error = %v, want %v", err, ErrInvalidTargetDelay)
+	}
+}
+
 func TestQueueAlgorithm_StartStop(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(WithWorkers(5))
+	q, err := NewQueueAlgorithm(WithWorkers(5))
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 
 	// Should not be started initially
 	if q.started.Load() {
@@ -88,10 +106,13 @@ func TestQueueAlgorithm_StartStop(t *testing.T) {
 func TestQueueAlgorithm_Enqueue_Success(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(10),
 		WithTargetDelay(100*time.Millisecond), // High threshold
 	)
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 
@@ -103,7 +124,7 @@ func TestQueueAlgorithm_Enqueue_Success(t *testing.T) {
 		return nil
 	}
 
-	err := q.Enqueue(ctx, handler)
+	err = q.Enqueue(ctx, handler)
 
 	if err != nil {
 		t.Errorf("Enqueue() error = %v, want nil", err)
@@ -131,7 +152,10 @@ func TestQueueAlgorithm_Enqueue_Success(t *testing.T) {
 func TestQueueAlgorithm_Enqueue_HandlerError(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(WithWorkers(10))
+	q, err := NewQueueAlgorithm(WithWorkers(10))
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 
@@ -142,20 +166,23 @@ func TestQueueAlgorithm_Enqueue_HandlerError(t *testing.T) {
 		return testErr
 	}
 
-	err := q.Enqueue(ctx, handler)
+	enqueueErr := q.Enqueue(ctx, handler)
 
-	if !errors.Is(err, testErr) {
-		t.Errorf("Enqueue() error = %v, want %v", err, testErr)
+	if !errors.Is(enqueueErr, testErr) {
+		t.Errorf("Enqueue() error = %v, want %v", enqueueErr, testErr)
 	}
 }
 
 func TestQueueAlgorithm_Enqueue_QueueFull(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(1),
 		WithQueueSize(2),
 	)
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 
@@ -190,7 +217,7 @@ func TestQueueAlgorithm_Enqueue_QueueFull(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Try to enqueue when queue is full (worker blocked + 2 in queue = full)
-	err := q.Enqueue(ctx, func(ctx context.Context) error {
+	err = q.Enqueue(ctx, func(ctx context.Context) error {
 		return nil
 	})
 
@@ -211,26 +238,32 @@ func TestQueueAlgorithm_Enqueue_QueueFull(t *testing.T) {
 func TestQueueAlgorithm_Enqueue_NotStarted(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm()
+	q, err := NewQueueAlgorithm()
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	// Don't start
 
 	ctx := context.Background()
-	err := q.Enqueue(ctx, func(ctx context.Context) error {
+	enqueueErr := q.Enqueue(ctx, func(ctx context.Context) error {
 		return nil
 	})
 
-	if !errors.Is(err, floodgate.ErrBackpressure) {
-		t.Errorf("Enqueue() when not started error = %v, want ErrBackpressure", err)
+	if !errors.Is(enqueueErr, floodgate.ErrBackpressure) {
+		t.Errorf("Enqueue() when not started error = %v, want ErrBackpressure", enqueueErr)
 	}
 }
 
 func TestQueueAlgorithm_Enqueue_ContextCanceled(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(1),
 		WithQueueSize(1),
 	)
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 
@@ -238,7 +271,7 @@ func TestQueueAlgorithm_Enqueue_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := q.Enqueue(ctx, func(ctx context.Context) error {
+	err = q.Enqueue(ctx, func(ctx context.Context) error {
 		t.Error("Handler should not be called with canceled context")
 		return nil
 	})
@@ -277,12 +310,15 @@ func TestQueueAlgorithm_Enqueue_ContextCanceled(t *testing.T) {
 func TestQueueAlgorithm_CoDelRejects_HighSojournTime(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(1), // Single worker to create backlog
 		WithQueueSize(100),
 		WithTargetDelay(1*time.Millisecond), // Very low threshold
 		WithInterval(10*time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 
@@ -326,10 +362,13 @@ func TestQueueAlgorithm_CoDelRejects_HighSojournTime(t *testing.T) {
 func TestQueueAlgorithm_LowLatency_NoRejections(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(50), // Many workers
 		WithTargetDelay(5*time.Millisecond),
 	)
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 
@@ -369,10 +408,13 @@ func TestQueueAlgorithm_LowLatency_NoRejections(t *testing.T) {
 func TestQueueAlgorithm_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(20),
 		WithQueueSize(500),
 	)
+	if err != nil {
+		t.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 
@@ -399,10 +441,13 @@ func TestQueueAlgorithm_ConcurrentAccess(t *testing.T) {
 
 // BenchmarkQueueAlgorithm_Enqueue benchmarks the enqueue operation.
 func BenchmarkQueueAlgorithm_Enqueue(b *testing.B) {
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(100),
 		WithQueueSize(10000),
 	)
+	if err != nil {
+		b.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 
@@ -420,10 +465,13 @@ func BenchmarkQueueAlgorithm_Enqueue(b *testing.B) {
 
 // BenchmarkQueueAlgorithm_Throughput benchmarks throughput with concurrent requests.
 func BenchmarkQueueAlgorithm_Throughput(b *testing.B) {
-	q := NewQueueAlgorithm(
+	q, err := NewQueueAlgorithm(
 		WithWorkers(100),
 		WithQueueSize(10000),
 	)
+	if err != nil {
+		b.Fatalf("NewQueueAlgorithm() error = %v", err)
+	}
 	q.Start()
 	defer q.Stop()
 

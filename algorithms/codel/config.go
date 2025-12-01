@@ -48,6 +48,8 @@ type Config struct {
 // NewAlgorithmFromConfig creates the appropriate algorithm based on configuration.
 // This allows algorithm selection via config files or environment variables.
 //
+// Returns an error if configuration is invalid (e.g., non-positive delays).
+//
 // Example usage:
 //
 //	cfg := codel.Config{
@@ -56,8 +58,8 @@ type Config struct {
 //	    Workers: 100,
 //	    QueueSize: 1000,
 //	}
-//	algo := codel.NewAlgorithmFromConfig(cfg)
-func NewAlgorithmFromConfig(cfg Config) interface{} {
+//	algo, err := codel.NewAlgorithmFromConfig(cfg)
+func NewAlgorithmFromConfig(cfg Config) (floodgate.Algorithm, error) {
 	// Set defaults
 	if cfg.TargetDelay == 0 {
 		cfg.TargetDelay = 5 * time.Millisecond
@@ -80,11 +82,12 @@ func NewAlgorithmFromConfig(cfg Config) interface{} {
 		)
 
 	case AlgorithmTypeQueue:
-		return NewQueueAlgorithm(
+		// Note: QueueAlgorithm doesn't implement floodgate.Algorithm directly
+		// (it has Enqueue instead of Decide), so we can't return it here.
+		// Use NewQueueAlgorithm directly for queue-based CoDel.
+		return NewAlgorithm(
 			WithTargetDelay(cfg.TargetDelay),
 			WithInterval(cfg.Interval),
-			WithWorkers(cfg.Workers),
-			WithQueueSize(cfg.QueueSize),
 		)
 
 	case AlgorithmTypeThreshold:
@@ -92,7 +95,7 @@ func NewAlgorithmFromConfig(cfg Config) interface{} {
 		if thresholds.EMAWarning == 0 {
 			thresholds = floodgate.DefaultThresholds()
 		}
-		return floodgate.NewThresholdAlgorithm(thresholds)
+		return floodgate.NewThresholdAlgorithm(thresholds), nil
 
 	default:
 		// Default to standard CoDel

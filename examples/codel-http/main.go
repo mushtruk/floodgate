@@ -31,10 +31,14 @@ func main() {
 	// Use CoDel algorithm with custom target delay
 	// Target delay: 5ms - requests experiencing higher queueing delay will trigger backpressure
 	// Interval: 100ms - delay must persist for this duration before entering dropping mode
-	cfg.Algorithm = codel.NewAlgorithm(
+	algo, err := codel.NewAlgorithm(
 		codel.WithTargetDelay(5*time.Millisecond),
 		codel.WithInterval(100*time.Millisecond),
 	)
+	if err != nil {
+		log.Fatalf("Failed to create CoDel algorithm: %v", err)
+	}
+	cfg.Algorithm = algo
 
 	// Enable metrics logging
 	cfg.EnableMetrics = true

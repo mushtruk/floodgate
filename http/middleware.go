@@ -3,14 +3,60 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/mushtruk/floodgate"
 	"github.com/mushtruk/floodgate/internal/core"
 )
+
+// errHTTPStatus is a sentinel error used to indicate an HTTP error status code.
+var errHTTPStatus = errors.New("http error status")
+
+// matchPath checks if a request path matches a skip pattern.
+// Patterns ending with "*" match as prefixes (e.g., "/api/*" matches "/api/users").
+// All other patterns require an exact match (e.g., "/health" matches only "/health").
+func matchPath(path, pattern string) bool {
+	if pattern != "" && pattern[len(pattern)-1] == '*' {
+		// Prefix match: "/api/*" matches "/api/anything"
+		prefix := pattern[:len(pattern)-1]
+		return len(path) >= len(prefix) && path[:len(prefix)] == prefix
+	}
+	// Exact match
+	return path == pattern
+}
+
+// responseWriter wraps http.ResponseWriter to capture the status code.
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	written    bool
+}
+
+// WriteHeader captures the status code before writing it.
+func (rw *responseWriter) WriteHeader(code int) {
+	if !rw.written {
+		rw.statusCode = code
+		rw.written = true
+	}
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Write captures 200 OK if WriteHeader wasn't called explicitly.
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.written {
+		rw.statusCode = http.StatusOK
+		rw.written = true
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
+// Unwrap returns the underlying ResponseWriter for middleware that need it.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
 
 // Middleware creates an HTTP middleware with adaptive backpressure.
 //
@@ -57,9 +103,10 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 
-			// Fast prefix check (optimized for small n=2-3 prefixes)
-			for _, skipPrefix := range skipPaths {
-				if strings.HasPrefix(path, skipPrefix) {
+			// Check if path should be skipped
+			// Supports exact match (e.g., "/health") or prefix match (e.g., "/api/*")
+			for _, skipPath := range skipPaths {
+				if matchPath(path, skipPath) {
 					next.ServeHTTP(w, r)
 					return
 				}
@@ -93,13 +140,22 @@ func Middleware(ctx context.Context, cfg Config) func(http.Handler) http.Handler
 				return
 			}
 
+			// Wrap ResponseWriter to capture status code
+			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
 			// Execute handler and record latency
 			start := time.Now()
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(wrapped, r)
 			latency := time.Since(start)
 
+			// Determine if response was an error (5xx status codes)
+			var handlerErr error
+			if wrapped.statusCode >= 500 {
+				handlerErr = errHTTPStatus
+			}
+
 			// Record latency via core
-			bpCore.RecordLatency(r.Context(), result, latency, nil)
+			bpCore.RecordLatency(r.Context(), result, latency, handlerErr)
 		})
 	}
 }

@@ -52,7 +52,6 @@ type Algorithm struct {
 	// State (protected by mu)
 	dropNext    time.Time // Time for next drop
 	lastDropped time.Time // Time of last drop
-	firstAbove  time.Time // When delay first exceeded target
 
 	// Configuration
 	targetDelay   time.Duration // Target sojourn time (default: 5ms)
@@ -62,10 +61,15 @@ type Algorithm struct {
 
 	mu sync.Mutex
 
-	// Atomic flag for fast-path optimization (0 = not dropping, 1 = dropping)
+	// Atomic fields for lock-free fast path
+	// droppingFlag: 0 = not dropping, 1 = dropping
 	droppingFlag uint32
-	count        int  // Drop count in current dropping episode
-	dropping     bool // Currently in dropping state
+	// firstAboveNs: Unix nanoseconds when delay first exceeded target, 0 = not set
+	// Using atomic int64 allows lock-free reset in the fast path
+	firstAboveNs int64
+
+	count    int  // Drop count in current dropping episode
+	dropping bool // Currently in dropping state
 }
 
 // Option configures the CoDel algorithm.
@@ -102,7 +106,9 @@ func WithInterval(d time.Duration) Option {
 //   - Low-latency APIs: 2-5ms target
 //   - Standard APIs: 5-10ms target
 //   - Batch processing: 20-50ms target
-func NewAlgorithm(opts ...Option) *Algorithm {
+//
+// Returns an error if configuration is invalid (e.g., non-positive delays).
+func NewAlgorithm(opts ...Option) (*Algorithm, error) {
 	a := &Algorithm{
 		targetDelay: 5 * time.Millisecond,
 		interval:    100 * time.Millisecond,
@@ -114,17 +120,17 @@ func NewAlgorithm(opts ...Option) *Algorithm {
 
 	// Validate configuration to prevent division by zero
 	if a.targetDelay <= 0 {
-		panic("codel: targetDelay must be positive")
+		return nil, ErrInvalidTargetDelay
 	}
 	if a.interval <= 0 {
-		panic("codel: interval must be positive")
+		return nil, ErrInvalidInterval
 	}
 
 	// Cache nanoseconds for performance
 	a.intervalNs = a.interval.Nanoseconds()
 	a.targetDelayNs = a.targetDelay.Nanoseconds()
 
-	return a
+	return a, nil
 }
 
 // Decide implements floodgate.Algorithm using the CoDel control law.
@@ -140,13 +146,8 @@ func (a *Algorithm) Decide(stats floodgate.Stats) floodgate.Decision {
 	aboveTarget := sojournTime > a.targetDelay
 	if !aboveTarget && atomic.LoadUint32(&a.droppingFlag) == 0 {
 		// Common case: not above target, not dropping
-		// However, we still need to reset firstAbove if it was set during a transient spike
-		// Check if firstAbove is set (requires lock unfortunately)
-		a.mu.Lock()
-		if !a.firstAbove.IsZero() {
-			a.firstAbove = time.Time{}
-		}
-		a.mu.Unlock()
+		// Reset firstAboveNs atomically (lock-free) if it was set during a transient spike
+		atomic.StoreInt64(&a.firstAboveNs, 0)
 
 		return floodgate.Decision{
 			Level:  a.mapToLevel(sojournTime),
@@ -163,8 +164,8 @@ func (a *Algorithm) Decide(stats floodgate.Stats) floodgate.Decision {
 			a.dropping = false
 			atomic.StoreUint32(&a.droppingFlag, 0)
 		}
-		// Reset firstAbove when below target
-		a.firstAbove = time.Time{}
+		// Reset firstAboveNs when below target
+		atomic.StoreInt64(&a.firstAboveNs, 0)
 		a.mu.Unlock()
 
 		return floodgate.Decision{
@@ -175,14 +176,17 @@ func (a *Algorithm) Decide(stats floodgate.Stats) floodgate.Decision {
 
 	// Above target - check for persistent delay
 	now := time.Now()
+	nowNs := now.UnixNano()
 
-	// Track when we first went above target
-	if a.firstAbove.IsZero() {
-		a.firstAbove = now
+	// Track when we first went above target (atomic compare-and-swap)
+	firstAboveNs := atomic.LoadInt64(&a.firstAboveNs)
+	if firstAboveNs == 0 {
+		atomic.StoreInt64(&a.firstAboveNs, nowNs)
+		firstAboveNs = nowNs
 	}
 
 	// Has delay been above target for the full interval?
-	persistentlyAbove := now.Sub(a.firstAbove) >= a.interval
+	persistentlyAbove := (nowNs - firstAboveNs) >= a.intervalNs
 
 	if persistentlyAbove {
 		if a.dropping {

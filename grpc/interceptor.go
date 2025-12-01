@@ -4,7 +4,6 @@ package grpc
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/mushtruk/floodgate"
@@ -14,6 +13,19 @@ import (
 	md "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+// matchMethod checks if a gRPC method matches a skip pattern.
+// Patterns ending with "*" match as prefixes (e.g., "/grpc.health.*" matches "/grpc.health.v1/Check").
+// All other patterns require an exact match.
+func matchMethod(method, pattern string) bool {
+	if pattern != "" && pattern[len(pattern)-1] == '*' {
+		// Prefix match: "/grpc.health.*" matches "/grpc.health.v1/Check"
+		prefix := pattern[:len(pattern)-1]
+		return len(method) >= len(prefix) && method[:len(prefix)] == prefix
+	}
+	// Exact match
+	return method == pattern
+}
 
 // UnaryServerInterceptor creates a gRPC unary server interceptor with adaptive backpressure.
 //
@@ -63,9 +75,10 @@ func UnaryServerInterceptor(ctx context.Context, cfg Config) grpc.UnaryServerInt
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		method := info.FullMethod
 
-		// Fast prefix check (optimized for small n=2-3 prefixes)
-		for _, skipPrefix := range skipMethods {
-			if strings.HasPrefix(method, skipPrefix) {
+		// Check if method should be skipped
+		// Supports exact match (e.g., "/pkg.Svc/Method") or prefix match (e.g., "/grpc.health.*")
+		for _, skipPattern := range skipMethods {
+			if matchMethod(method, skipPattern) {
 				return handler(ctx, req)
 			}
 		}

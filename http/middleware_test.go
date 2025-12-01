@@ -237,6 +237,98 @@ func TestMiddleware_SkipPaths(t *testing.T) {
 	}
 }
 
+// TestMatchPath tests the path matching function.
+func TestMatchPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		path    string
+		pattern string
+		want    bool
+	}{
+		// Exact matches
+		{"exact match", "/health", "/health", true},
+		{"exact no match", "/healthcheck", "/health", false},
+		{"exact no match prefix", "/health/live", "/health", false},
+
+		// Prefix matches with *
+		{"prefix match", "/api/users", "/api/*", true},
+		{"prefix match root", "/api/", "/api/*", true},
+		{"prefix match exact", "/api/", "/api/", true},
+		{"prefix no match", "/other/path", "/api/*", false},
+
+		// Edge cases
+		{"empty pattern", "/health", "", false},
+		{"empty path", "", "/health", false},
+		{"just star", "/anything", "*", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := matchPath(tt.path, tt.pattern); got != tt.want {
+				t.Errorf("matchPath(%q, %q) = %v, want %v", tt.path, tt.pattern, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestResponseWriter tests the ResponseWriter wrapper.
+func TestResponseWriter(t *testing.T) {
+	t.Parallel()
+
+	t.Run("captures explicit status code", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		rw := &responseWriter{ResponseWriter: rec, statusCode: http.StatusOK}
+
+		rw.WriteHeader(http.StatusNotFound)
+
+		if rw.statusCode != http.StatusNotFound {
+			t.Errorf("statusCode = %d, want %d", rw.statusCode, http.StatusNotFound)
+		}
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("underlying recorder code = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("captures implicit 200 on Write", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		rw := &responseWriter{ResponseWriter: rec}
+
+		_, _ = rw.Write([]byte("hello"))
+
+		if rw.statusCode != http.StatusOK {
+			t.Errorf("statusCode = %d, want %d", rw.statusCode, http.StatusOK)
+		}
+	})
+
+	t.Run("ignores duplicate WriteHeader calls", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		rw := &responseWriter{ResponseWriter: rec, statusCode: http.StatusOK}
+
+		rw.WriteHeader(http.StatusCreated)
+		rw.WriteHeader(http.StatusNotFound) // Should be ignored
+
+		if rw.statusCode != http.StatusCreated {
+			t.Errorf("statusCode = %d, want %d (first call)", rw.statusCode, http.StatusCreated)
+		}
+	})
+
+	t.Run("Unwrap returns underlying writer", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		rw := &responseWriter{ResponseWriter: rec}
+
+		if rw.Unwrap() != rec {
+			t.Error("Unwrap should return underlying ResponseWriter")
+		}
+	})
+}
+
 // Test circuit breaker integration.
 func TestMiddleware_CircuitBreaker(_ *testing.T) {
 	ctx := context.Background()
