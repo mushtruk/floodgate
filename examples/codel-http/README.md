@@ -64,10 +64,14 @@ hey -n 10000 -c 100 http://localhost:8080/slow
 ## Configuration
 
 ```go
-cfg.Algorithm = codel.NewAlgorithm(
+algo, err := codel.NewAlgorithm(
     codel.WithTargetDelay(5*time.Millisecond),  // Target queueing delay
     codel.WithInterval(100*time.Millisecond),   // Persistence check interval
 )
+if err != nil {
+    log.Fatal(err)
+}
+cfg.Algorithm = algo
 ```
 
 **Parameters**:

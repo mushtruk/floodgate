@@ -8,7 +8,7 @@ A sophisticated, production-ready Go library for adaptive backpressure and load 
 
 ## Features
 
-- ⚡ **Adaptive Backpressure**: Automatically adjusts to system load using EMA (Exponential Moving Average) latency tracking
+- ⚡ **Adaptive Backpressure**: Self-tuning load shedding via the CoDel (Controlled Delay) algorithm — drops requests when queueing delay persistently exceeds a target, with no manual threshold tuning required
 - 📊 **Percentile Tracking**: Monitors P50, P95, P99 latencies for tail latency detection
 - 🔌 **Circuit Breaker**: Prevents rapid on/off toggling during emergency states
 - 🎯 **gRPC & HTTP Middleware**: Drop-in middleware for gRPC and HTTP servers
@@ -314,10 +314,13 @@ import (
 )
 
 // Base algorithm
-algo := codel.NewAlgorithm()
+base, err := codel.NewAlgorithm()
+if err != nil {
+    log.Fatal(err)
+}
 
 // Add distributed tracing
-algo = floodgate.WithTracing(algo, tracer)
+var algo floodgate.Algorithm = floodgate.WithTracing(base, tracer)
 
 // Add decision caching (100ms TTL)
 algo = floodgate.NewCachedAlgorithm(algo, 100*time.Millisecond)
@@ -328,7 +331,7 @@ algo = floodgate.WithFallback(algo, fallback, logger)
 
 // Or use fully instrumented algorithm
 algo = floodgate.NewInstrumentedAlgorithm(
-    codel.NewAlgorithm(),
+    base,
     tracer,
     logger,
     metrics,
