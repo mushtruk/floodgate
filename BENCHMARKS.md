@@ -340,7 +340,8 @@ cb.RecordFailure()  // +15 ns/op (logging + metrics + alerting)
 
 ```go
 // Unwrapped CoDel
-algo := codel.NewAlgorithm()
+base, _ := codel.NewAlgorithm()
+var algo Algorithm = base
 decision := algo.Decide(stats)  // 49.75 ns/op (baseline)
 
 // WithTracing

@@ -18,7 +18,7 @@ type Config struct {
 	// Examples:
 	//   cfg.Algorithm = nil  // Use default thresholds (backward compatible)
 	//   cfg.Algorithm = floodgate.NewThresholdAlgorithm(customThresholds)
-	//   cfg.Algorithm = codel.NewAlgorithm()
+	//   algo, err := codel.NewAlgorithm(); cfg.Algorithm = algo
 	Algorithm                      floodgate.Algorithm
 	SkipPaths                      []string
 	Thresholds                     floodgate.Thresholds

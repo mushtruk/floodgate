@@ -142,10 +142,13 @@ The backpressure middleware uses Floodgate's HTTP integration:
 
 ```go
 func BackpressureMiddleware(ctx context.Context) Middleware {
-    algo := codel.NewAlgorithm(
+    algo, err := codel.NewAlgorithm(
         codel.WithTargetDelay(5*time.Millisecond),
         codel.WithInterval(100*time.Millisecond),
     )
+    if err != nil {
+        log.Fatal(err)
+    }
 
     cfg := fhttp.DefaultConfig()
     cfg.Algorithm = algo

@@ -75,10 +75,14 @@ Floodgate provides two CoDel variants:
 ```go
 import "github.com/mushtruk/floodgate/algorithms/codel"
 
-cfg.Algorithm = codel.NewAlgorithm(
+algo, err := codel.NewAlgorithm(
     codel.WithTargetDelay(5 * time.Millisecond),  // Target queueing delay
     codel.WithInterval(100 * time.Millisecond),   // Persistence interval
 )
+if err != nil {
+    log.Fatal(err)
+}
+cfg.Algorithm = algo
 ```
 
 **Configuration (Queue-based)**:
@@ -86,11 +90,14 @@ cfg.Algorithm = codel.NewAlgorithm(
 import "github.com/mushtruk/floodgate/algorithms/codel"
 
 // Queue-based CoDel with actual request queuing
-queue := codel.NewQueueAlgorithm(
+queue, err := codel.NewQueueAlgorithm(
     100,                        // Queue size
     5*time.Millisecond,         // Target delay
     100*time.Millisecond,       // Interval
 )
+if err != nil {
+    log.Fatal(err)
+}
 
 // Enqueue request with handler
 err := queue.Enqueue(ctx, func(ctx context.Context) error {
@@ -246,23 +253,18 @@ import (
 
 cfg := httpMiddleware.DefaultConfig()
 
-// Low-latency API (aggressive)
-cfg.Algorithm = codel.NewAlgorithm(
-    codel.WithTargetDelay(2 * time.Millisecond),
-    codel.WithInterval(50 * time.Millisecond),
-)
-
-// Standard API (balanced)
-cfg.Algorithm = codel.NewAlgorithm(
+// Pick a tuning profile for your workload:
+//   Low-latency API (aggressive): TargetDelay 2ms,  Interval 50ms
+//   Standard API    (balanced):   TargetDelay 5ms,  Interval 100ms
+//   Batch processing (lenient):   TargetDelay 20ms, Interval 200ms
+algo, err := codel.NewAlgorithm(
     codel.WithTargetDelay(5 * time.Millisecond),
     codel.WithInterval(100 * time.Millisecond),
 )
-
-// Batch processing (lenient)
-cfg.Algorithm = codel.NewAlgorithm(
-    codel.WithTargetDelay(20 * time.Millisecond),
-    codel.WithInterval(200 * time.Millisecond),
-)
+if err != nil {
+    log.Fatal(err)
+}
+cfg.Algorithm = algo
 ```
 
 ### gRPC Interceptor with CoDel Algorithm
@@ -274,7 +276,11 @@ import (
 )
 
 cfg := grpcInterceptor.DefaultConfig()
-cfg.Algorithm = codel.NewAlgorithm()
+algo, err := codel.NewAlgorithm()
+if err != nil {
+    log.Fatal(err)
+}
+cfg.Algorithm = algo
 
 interceptor := grpcInterceptor.UnaryServerInterceptor(ctx, cfg)
 ```
@@ -322,7 +328,10 @@ func (t *MyTracer) StartSpan(ctx context.Context, name string) (context.Context,
 }
 
 // Wrap algorithm with tracing
-algo := codel.NewAlgorithm()
+algo, err := codel.NewAlgorithm()
+if err != nil {
+    log.Fatal(err)
+}
 tracedAlgo := floodgate.WithTracing(algo, tracer)
 
 // Decisions are now traced
@@ -342,7 +351,10 @@ import (
 )
 
 // Cache decisions for 100ms
-algo := codel.NewAlgorithm()
+algo, err := codel.NewAlgorithm()
+if err != nil {
+    log.Fatal(err)
+}
 cachedAlgo := floodgate.NewCachedAlgorithm(algo, 100*time.Millisecond)
 
 // First call: computes decision (50ns)
@@ -400,16 +412,19 @@ Stack decorators for comprehensive observability:
 import "github.com/mushtruk/floodgate"
 
 // Start with base algorithm
-algo := codel.NewAlgorithm()
+base, err := codel.NewAlgorithm()
+if err != nil {
+    log.Fatal(err)
+}
 
 // Add layers of functionality
-algo = floodgate.WithTracing(algo, tracer)           // Distributed tracing
-algo = floodgate.NewCachedAlgorithm(algo, 50*time.Millisecond) // Caching
-algo = floodgate.WithFallback(algo, fallbackAlgo, logger)      // Panic recovery
+var algo floodgate.Algorithm = floodgate.WithTracing(base, tracer) // Distributed tracing
+algo = floodgate.NewCachedAlgorithm(algo, 50*time.Millisecond)     // Caching
+algo = floodgate.WithFallback(algo, fallbackAlgo, logger)          // Panic recovery
 
 // Or use the convenience function
 algo = floodgate.NewInstrumentedAlgorithm(
-    codel.NewAlgorithm(),
+    base,
     tracer,
     logger,
     metrics,
