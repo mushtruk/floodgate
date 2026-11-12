@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.5.0
-	github.com/mushtruk/floodgate v1.6.1 // x-release-please-version
+	github.com/mushtruk/floodgate v1.6.2 // x-release-please-version
 )
 
 require (
