@@ -3,7 +3,7 @@ module github.com/mushtruk/floodgate/metrics/opentelemetry
 go 1.24.0
 
 require (
-	github.com/mushtruk/floodgate v1.6.0 // x-release-please-version
+	github.com/mushtruk/floodgate v1.6.1 // x-release-please-version
 	go.opentelemetry.io/otel v1.33.0
 	go.opentelemetry.io/otel/metric v1.33.0
 	go.opentelemetry.io/otel/sdk/metric v1.33.0

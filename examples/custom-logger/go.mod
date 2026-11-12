@@ -5,7 +5,7 @@ go 1.24.0
 replace github.com/mushtruk/floodgate => ../..
 
 require (
-	github.com/mushtruk/floodgate v1.6.0 // x-release-please-version
+	github.com/mushtruk/floodgate v1.6.1 // x-release-please-version
 	github.com/rs/zerolog v1.33.0
 )
 

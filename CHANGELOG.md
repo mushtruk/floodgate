@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.1](https://github.com/mushtruk/floodgate/compare/v1.6.0...v1.6.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **build:** require the released root version in every module ([f3b6c17](https://github.com/mushtruk/floodgate/commit/f3b6c175a6e705a5826cfcc9a767526b6c7e686d))
+* **metrics:** never report a wrapped counter delta after a reset ([b4b1c61](https://github.com/mushtruk/floodgate/commit/b4b1c61c1230edce1439586b4618e39e38f37a93))
+
 ## [1.6.0](https://github.com/mushtruk/floodgate/compare/v1.5.0...v1.6.0) (2025-12-01)
 
 
