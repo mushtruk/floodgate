@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/mushtruk/floodgate"
+	"github.com/mushtruk/floodgate/internal/counter"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -154,8 +155,8 @@ func (m *Metrics) RecordCacheSize(size int) {
 // RecordDispatcherStats implements floodgate.MetricsCollector.
 func (m *Metrics) RecordDispatcherStats(dropped, total uint64) {
 	// Calculate deltas since last call (Prometheus counters must always increase)
-	dropsDelta := dropped - m.lastDropped
-	totalDelta := total - m.lastTotal
+	dropsDelta := counter.Delta(dropped, m.lastDropped)
+	totalDelta := counter.Delta(total, m.lastTotal)
 
 	if dropsDelta > 0 {
 		m.dispatcherDrops.Add(float64(dropsDelta))
