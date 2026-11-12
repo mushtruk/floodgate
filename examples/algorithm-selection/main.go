@@ -9,62 +9,54 @@ import (
 	"time"
 
 	"github.com/mushtruk/floodgate"
-	"github.com/mushtruk/floodgate/algorithms/codel"
 	fhttp "github.com/mushtruk/floodgate/http"
 )
 
 func main() {
 	ctx := context.Background()
 
-	// Type-safe configuration
-	cfg := codel.Config{
-		TargetDelay: 5 * time.Millisecond,
-		Interval:    100 * time.Millisecond,
-		Workers:     100,
-		QueueSize:   1000,
-		Thresholds:  floodgate.DefaultThresholds(),
-	}
-
-	// Type-safe algorithm selection
-	switch os.Getenv("SERVICE_PROFILE") {
-	case "cpu-bound":
-		cfg.Type = codel.AlgorithmTypeStandard
-		log.Printf("Using Standard CoDel (CPU-bound, 49 ns/op)")
-
-	case "io-bound":
-		cfg.Type = codel.AlgorithmTypeQueue
-		log.Printf("Using Queue CoDel (I/O-bound, true sojourn time)")
-
-	case "", "safe-default":
-		cfg.Type = codel.AlgorithmTypeThreshold
-		log.Printf("Using Threshold (multi-signal, 5 ns/op)")
-
-	default:
-		// Auto-recommend based on service characteristics
-		cpuBound := os.Getenv("CPU_BOUND") == "true"
-		avgLatency := 50 * time.Millisecond
-		cfg.Type = codel.RecommendAlgorithmType(cpuBound, avgLatency)
-		log.Printf("Auto-selected: %s (cpuBound=%v)", cfg.Type, cpuBound)
-	}
-
-	// Create algorithm from type-safe config
-	algo, err := codel.NewAlgorithmFromConfig(cfg)
+	algo, err := selectAlgorithm(os.Getenv("SERVICE_PROFILE"))
 	if err != nil {
-		log.Fatalf("Failed to create algorithm: %v", err)
+		log.Fatal(err)
 	}
+	log.Printf("Created: algorithm of type %T", algo)
 
-	// Log the algorithm type
-	switch algo.(type) {
-	case *codel.Algorithm:
-		log.Printf("Created: Standard CoDel")
-	case *floodgate.ThresholdAlgorithm:
-		log.Printf("Created: Threshold")
-	default:
-		log.Printf("Created: Algorithm of type %T", algo)
-	}
-
-	// Start server with the selected algorithm
 	startStandardServer(ctx, algo)
+}
+
+// selectAlgorithm maps a service profile to the backpressure algorithm that suits it.
+func selectAlgorithm(profile string) (floodgate.Algorithm, error) {
+	switch profile {
+	case "", "default":
+		log.Printf("Using Threshold with default thresholds")
+		return floodgate.NewThresholdAlgorithm(floodgate.DefaultThresholds()), nil
+
+	case "latency-sensitive":
+		log.Printf("Using Threshold with tight thresholds")
+		return floodgate.NewThresholdAlgorithm(floodgate.Thresholds{
+			P99Emergency: 500 * time.Millisecond,
+			P95Critical:  200 * time.Millisecond,
+			EMACritical:  100 * time.Millisecond,
+			P95Moderate:  100 * time.Millisecond,
+			EMAWarning:   50 * time.Millisecond,
+			SlopeWarning: 5 * time.Millisecond,
+		}), nil
+
+	case "high-throughput":
+		// Reusing a decision for a short TTL trades reaction time for fewer evaluations per request.
+		log.Printf("Using Threshold with cached decisions")
+		return floodgate.NewCachedAlgorithm(
+			floodgate.NewThresholdAlgorithm(floodgate.DefaultThresholds()),
+			100*time.Millisecond,
+		), nil
+
+	case "disabled":
+		log.Printf("Using NoOp (backpressure disabled)")
+		return floodgate.NoOpAlgorithm{}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown SERVICE_PROFILE %q: want default, latency-sensitive, high-throughput or disabled", profile)
+	}
 }
 
 func startStandardServer(ctx context.Context, algorithm floodgate.Algorithm) {
@@ -98,4 +90,3 @@ func startStandardServer(ctx context.Context, algorithm floodgate.Algorithm) {
 		log.Fatal(err)
 	}
 }
-

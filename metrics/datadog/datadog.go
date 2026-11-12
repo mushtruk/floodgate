@@ -30,6 +30,7 @@ import (
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/mushtruk/floodgate"
+	"github.com/mushtruk/floodgate/internal/counter"
 )
 
 // Metrics implements floodgate.MetricsCollector using Datadog DogStatsD.
@@ -47,7 +48,7 @@ type Metrics struct {
 type Option func(*Metrics)
 
 // WithNamespace sets a namespace prefix for all metrics.
-// Example: WithNamespace("myapp") produces "myapp.floodgate.requests.total"
+// Example: WithNamespace("myapp") produces "myapp.floodgate.requests.total".
 func WithNamespace(ns string) Option {
 	return func(m *Metrics) {
 		m.namespace = ns
@@ -55,7 +56,7 @@ func WithNamespace(ns string) Option {
 }
 
 // WithTags adds global tags to all metrics.
-// Example: WithTags("env:prod", "service:api")
+// Example: WithTags("env:prod", "service:api").
 func WithTags(tags ...string) Option {
 	return func(m *Metrics) {
 		m.tags = append(m.tags, tags...)
@@ -168,8 +169,8 @@ func (m *Metrics) RecordDispatcherStats(dropped, total uint64) {
 	tags := m.mergeTags(nil)
 
 	// Calculate deltas since last call (counters should track increments)
-	dropsDelta := int64(dropped - m.lastDropped)
-	totalDelta := int64(total - m.lastTotal)
+	dropsDelta := counter.Delta(dropped, m.lastDropped)
+	totalDelta := counter.Delta(total, m.lastTotal)
 
 	if dropsDelta > 0 {
 		_ = m.client.Count(m.metricName("dispatcher.drops"), dropsDelta, tags, 1.0)

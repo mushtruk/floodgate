@@ -122,8 +122,7 @@ func main() {
 
 	// Fast endpoint
 	mux.HandleFunc("/api/fast", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		_, span := tracer.Start(ctx, "handle_fast_request")
+		_, span := tracer.Start(r.Context(), "handle_fast_request")
 		defer span.End()
 
 		time.Sleep(time.Duration(1+rand.Intn(4)) * time.Millisecond)
@@ -132,8 +131,7 @@ func main() {
 
 	// Slow endpoint (triggers backpressure)
 	mux.HandleFunc("/api/slow", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		_, span := tracer.Start(ctx, "handle_slow_request")
+		_, span := tracer.Start(r.Context(), "handle_slow_request")
 		defer span.End()
 
 		time.Sleep(time.Duration(100+rand.Intn(200)) * time.Millisecond)
@@ -142,12 +140,12 @@ func main() {
 
 	// Simulated cascade - calls downstream service
 	mux.HandleFunc("/api/cascade", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		_, span := tracer.Start(ctx, "handle_cascade_request")
+		reqCtx := r.Context()
+		_, span := tracer.Start(reqCtx, "handle_cascade_request")
 		defer span.End()
 
 		// Simulate calling downstream service (which might also have backpressure)
-		_, downstreamSpan := tracer.Start(ctx, "call_downstream_service",
+		_, downstreamSpan := tracer.Start(reqCtx, "call_downstream_service",
 			trace.WithSpanKind(trace.SpanKindClient),
 		)
 		time.Sleep(150 * time.Millisecond)

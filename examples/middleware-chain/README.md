@@ -19,7 +19,7 @@ Request Flow (top to bottom):
 ├─────────────────────────┤
 │  Timeout Middleware     │ ← Enforces request timeout
 ├─────────────────────────┤
-│ Backpressure Middleware │ ← CoDel adaptive backpressure
+│ Backpressure Middleware │ ← Threshold-based backpressure
 ├─────────────────────────┤
 │   Application Handler   │ ← Your business logic
 └─────────────────────────┘
@@ -59,7 +59,7 @@ hey -z 10s -c 50 http://localhost:8080/slow
 
 Expected:
 - Initial requests succeed
-- After sustained load, CoDel starts rejecting requests with 503
+- Once `/slow` latency exceeds the emergency threshold, the backpressure middleware rejects requests with 503
 - Logs show backpressure decisions
 
 ### Panic Recovery
@@ -142,16 +142,15 @@ The backpressure middleware uses Floodgate's HTTP integration:
 
 ```go
 func BackpressureMiddleware(ctx context.Context) Middleware {
-    algo, err := codel.NewAlgorithm(
-        codel.WithTargetDelay(5*time.Millisecond),
-        codel.WithInterval(100*time.Millisecond),
-    )
-    if err != nil {
-        log.Fatal(err)
-    }
-
     cfg := fhttp.DefaultConfig()
-    cfg.Algorithm = algo
+    cfg.Algorithm = floodgate.NewThresholdAlgorithm(floodgate.Thresholds{
+        P99Emergency: 40 * time.Millisecond,
+        P95Critical:  30 * time.Millisecond,
+        EMACritical:  25 * time.Millisecond,
+        P95Moderate:  20 * time.Millisecond,
+        EMAWarning:   10 * time.Millisecond,
+        SlopeWarning: 5 * time.Millisecond,
+    })
     cfg.EnableMetrics = true
 
     return fhttp.Middleware(ctx, cfg)

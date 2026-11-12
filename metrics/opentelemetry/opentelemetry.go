@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/mushtruk/floodgate"
+	"github.com/mushtruk/floodgate/internal/counter"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -181,8 +182,8 @@ func (m *Metrics) RecordDispatcherStats(dropped, total uint64) {
 	ctx := context.Background()
 
 	// Calculate deltas since last call (counters must always increase)
-	dropsDelta := int64(dropped - m.lastDropped)
-	totalDelta := int64(total - m.lastTotal)
+	dropsDelta := counter.Delta(dropped, m.lastDropped)
+	totalDelta := counter.Delta(total, m.lastTotal)
 
 	if dropsDelta > 0 {
 		m.dispatcherDrops.Add(ctx, dropsDelta)
