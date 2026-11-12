@@ -14,154 +14,112 @@ permissions:
   contents: read
 
 jobs:
-  lint:
-    name: Lint
+  modules:
+    name: Discover Modules
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      dirs: ${{ steps.discover.outputs.dirs }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.24'
-          cache: true
+      # Every tracked go.mod is a module, so a new module or example is covered without editing this file.
+      - name: Discover modules
+        id: discover
+        run: echo "dirs=$(git ls-files '*go.mod' | xargs -n1 dirname | jq -Rcs 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.6
-          args: --timeout=5m
-
-  test:
-    name: Test
-    runs-on: ${{ matrix.os }}
+  lint:
+    name: Lint (${{ matrix.module }})
+    needs: modules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        go-version: ['1.24']
+        module: ${{ fromJSON(needs.modules.outputs.dirs) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: ${{ matrix.go-version }}
-          cache: true
+          go-version: '1.24'
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
+        with:
+          version: v2.6.2
+          working-directory: ${{ matrix.module }}
+          args: --timeout=5m
+
+  test:
+    name: Test (${{ matrix.module }}, ${{ matrix.os }})
+    needs: modules
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.modules.outputs.dirs) }}
+        os: [ubuntu-latest]
+        # The root module carries the platform-sensitive core, so only it runs on every OS.
+        include:
+          - module: .
+            os: macos-latest
+          - module: .
+            os: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.module }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.24'
+          cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: Run tests
-        shell: bash
-        run: |
-          rm -f coverage.out
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.24'
-        uses: codecov/codecov-action@v4
+        if: matrix.module == '.' && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
           files: ./coverage.out
           flags: unittests
           fail_ci_if_error: false
 
-  test-metrics-packages:
-    name: Test Metrics Packages
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        package:
-          - prometheus
-          - opentelemetry
-          - datadog
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.24'
-          cache: true
-
-      - name: Test ${{ matrix.package }}
-        working-directory: ./metrics/${{ matrix.package }}
-        run: |
-          go mod download
-          go test -v -race -coverprofile=coverage.out ./...
-
-  test-examples:
-    name: Build Examples
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        example:
-          - basic
-          - grpc-server
-          - http-server
-          - custom-logger
-          - slog-logger
-          - zap-logger
-          - prometheus-metrics
-          - otel-metrics
-          - datadog-metrics
-          - tracing-jaeger
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.24'
-          cache: true
-
-      - name: Build ${{ matrix.example }}
-        working-directory: ./examples/${{ matrix.example }}
-        run: |
-          go mod download
-          go build -v .
-
-  integration-test:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.24'
-          cache: true
-
-      - name: Run integration tests
-        run: |
-          # Run tests with integration tag if they exist
-          if go list -tags=integration ./... | grep -q .; then
-            go test -v -race -tags=integration ./...
-          else
-            echo "No integration tests found, skipping"
-          fi
-
   build:
-    name: Build
+    name: Build (${{ matrix.module }})
+    needs: modules
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.modules.outputs.dirs) }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.24'
-          cache: true
+          cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: Build
-        run: go build -v ./...
+        run: go build ./...
 
       - name: Verify go.mod is tidy
-        run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum
+        run: go mod tidy -diff
