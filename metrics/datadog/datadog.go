@@ -48,7 +48,7 @@ type Metrics struct {
 type Option func(*Metrics)
 
 // WithNamespace sets a namespace prefix for all metrics.
-// Example: WithNamespace("myapp") produces "myapp.floodgate.requests.total"
+// Example: WithNamespace("myapp") produces "myapp.floodgate.requests.total".
 func WithNamespace(ns string) Option {
 	return func(m *Metrics) {
 		m.namespace = ns
@@ -56,7 +56,7 @@ func WithNamespace(ns string) Option {
 }
 
 // WithTags adds global tags to all metrics.
-// Example: WithTags("env:prod", "service:api")
+// Example: WithTags("env:prod", "service:api").
 func WithTags(tags ...string) Option {
 	return func(m *Metrics) {
 		m.tags = append(m.tags, tags...)

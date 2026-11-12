@@ -95,7 +95,7 @@ func (t *Tracer) RecordCircuitBreakerState(span trace.Span, state floodgate.Circ
 }
 
 // ErrBackpressureRejected is recorded when a request is rejected due to backpressure.
-type ErrBackpressureRejected struct {
+type ErrBackpressureRejected struct { //nolint:errname // renaming the exported type would break the v1 API
 	Level floodgate.Level
 }
 
@@ -104,7 +104,7 @@ func (e ErrBackpressureRejected) Error() string {
 }
 
 // ErrCircuitBreakerOpen is recorded when a request is rejected by the circuit breaker.
-type ErrCircuitBreakerOpen struct{}
+type ErrCircuitBreakerOpen struct{} //nolint:errname // renaming the exported type would break the v1 API
 
 func (e ErrCircuitBreakerOpen) Error() string {
 	return "circuit breaker open"
