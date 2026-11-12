@@ -1,0 +1,12 @@
+{
+  "bootstrap-sha": "b0e24161abbd01929eb746490b8eebf8f01d41fc",
+  "packages": {
+    ".": {
+      "release-type": "go",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "**/go.mod", "glob": true }
+      ]
+    }
+  }
+}

@@ -3,7 +3,7 @@ module github.com/mushtruk/floodgate/examples/tracing-jaeger
 go 1.24.0
 
 require (
-	github.com/mushtruk/floodgate v1.6.0
+	github.com/mushtruk/floodgate v1.6.0 // x-release-please-version
 	github.com/mushtruk/floodgate/tracing v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.58.0
 	go.opentelemetry.io/otel v1.37.0
