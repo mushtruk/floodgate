@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.2](https://github.com/mushtruk/floodgate/compare/v1.6.1...v1.6.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **algorithm:** make CachedAlgorithm a concurrency-safe pass-through and deprecate it ([bd8186f](https://github.com/mushtruk/floodgate/commit/bd8186fc948420fc43a08a5e741961239f2504d9))
+* **algorithm:** make CachedAlgorithm a concurrency-safe pass-through and deprecate it ([776b440](https://github.com/mushtruk/floodgate/commit/776b440988700b72520cf1e894463ce09b577691))
+* **examples:** drop the cached-decisions profile from algorithm-selection ([0157d74](https://github.com/mushtruk/floodgate/commit/0157d7499053f0fc2ade36a3e13042a5eefef914))
+
 ## [1.6.1](https://github.com/mushtruk/floodgate/compare/v1.6.0...v1.6.1) (2026-11-12)
 
 
