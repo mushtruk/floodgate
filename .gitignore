@@ -5,13 +5,10 @@
 *.so
 *.dylib
 
-# Example binaries
-examples/*/basic
-examples/*/grpc-server
-examples/*/http-server
-examples/*/custom-logger
-examples/*/slog-logger
-examples/*/zap-logger
+# Example binaries: go build names them after their directory, and example sources all carry an extension
+examples/*/*
+!examples/*/*.*
+!examples/*/*/
 
 # Test binary, built with `go test -c`
 *.test
