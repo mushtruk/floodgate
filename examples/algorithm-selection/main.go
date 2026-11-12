@@ -42,20 +42,12 @@ func selectAlgorithm(profile string) (floodgate.Algorithm, error) {
 			SlopeWarning: 5 * time.Millisecond,
 		}), nil
 
-	case "high-throughput":
-		// Reusing a decision for a short TTL trades reaction time for fewer evaluations per request.
-		log.Printf("Using Threshold with cached decisions")
-		return floodgate.NewCachedAlgorithm(
-			floodgate.NewThresholdAlgorithm(floodgate.DefaultThresholds()),
-			100*time.Millisecond,
-		), nil
-
 	case "disabled":
 		log.Printf("Using NoOp (backpressure disabled)")
 		return floodgate.NoOpAlgorithm{}, nil
 
 	default:
-		return nil, fmt.Errorf("unknown SERVICE_PROFILE %q: want default, latency-sensitive, high-throughput or disabled", profile)
+		return nil, fmt.Errorf("unknown SERVICE_PROFILE %q: want default, latency-sensitive or disabled", profile)
 	}
 }
 
