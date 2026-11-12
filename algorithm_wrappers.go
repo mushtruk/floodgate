@@ -2,6 +2,7 @@ package floodgate
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 )
 
@@ -53,57 +54,33 @@ func (t *tracedAlgorithm) Decide(stats Stats) Decision {
 	return decision
 }
 
-// WithCaching wraps an algorithm with a decision cache for expensive algorithms.
+// CachedAlgorithm forwards every decision to the wrapped Algorithm.
+//
+// Deprecated: Decide calls the wrapped Algorithm directly and the ttl passed to
+// NewCachedAlgorithm is ignored. Stats holds continuous durations, so a
+// decision cache almost never hits and costs more than the algorithms it
+// wraps. Use the Algorithm itself.
 type CachedAlgorithm struct {
-	algo      Algorithm
-	cache     map[Stats]cacheEntry
-	ttl       time.Duration
-	hitCount  uint64
-	missCount uint64
+	algo   Algorithm
+	misses atomic.Uint64
 }
 
-type cacheEntry struct {
-	cachedAt time.Time
-	decision Decision
-}
-
-// NewCachedAlgorithm creates an algorithm with result caching.
-// Useful for expensive algorithm implementations.
-func NewCachedAlgorithm(algo Algorithm, ttl time.Duration) *CachedAlgorithm {
-	return &CachedAlgorithm{
-		algo:  algo,
-		cache: make(map[Stats]cacheEntry),
-		ttl:   ttl,
-	}
+// NewCachedAlgorithm wraps algo in a CachedAlgorithm. The ttl is ignored.
+//
+// Deprecated: Decide calls algo directly. Use algo itself.
+func NewCachedAlgorithm(algo Algorithm, _ time.Duration) *CachedAlgorithm {
+	return &CachedAlgorithm{algo: algo}
 }
 
 func (c *CachedAlgorithm) Decide(stats Stats) Decision {
-	// Check cache
-	if entry, ok := c.cache[stats]; ok {
-		if time.Since(entry.cachedAt) < c.ttl {
-			c.hitCount++
-			return entry.decision
-		}
-		// Expired, remove from cache
-		delete(c.cache, stats)
-	}
-
-	// Cache miss - compute decision
-	c.missCount++
-	decision := c.algo.Decide(stats)
-
-	// Store in cache
-	c.cache[stats] = cacheEntry{
-		decision: decision,
-		cachedAt: time.Now(),
-	}
-
-	return decision
+	c.misses.Add(1)
+	return c.algo.Decide(stats)
 }
 
-// CacheStats returns cache hit and miss counts.
+// CacheStats returns hits, which is always 0, and misses, which counts Decide
+// calls. It is safe for concurrent use.
 func (c *CachedAlgorithm) CacheStats() (hits, misses uint64) {
-	return c.hitCount, c.missCount
+	return 0, c.misses.Load()
 }
 
 // WithFallback wraps an algorithm with a fallback for panic recovery.
