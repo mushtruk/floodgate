@@ -10,12 +10,6 @@ package floodgate
 //	    floodgate.DefaultThresholds(),
 //	)
 //
-// Example with adaptive CoDel:
-//
-//	cfg.Algorithm = codel.NewAlgorithm(
-//	    codel.WithTargetDelay(5*time.Millisecond),
-//	)
-//
 // To implement custom algorithms:
 //
 //	type MyAlgorithm struct {}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/mushtruk/floodgate"
-	"github.com/mushtruk/floodgate/algorithms/codel"
 	fhttp "github.com/mushtruk/floodgate/http"
 )
 
@@ -99,17 +98,16 @@ func TimeoutMiddleware(timeout time.Duration) Middleware {
 
 // BackpressureMiddleware demonstrates combining backpressure with other middleware.
 func BackpressureMiddleware(ctx context.Context) Middleware {
-	// Create CoDel algorithm for adaptive backpressure
-	algo, err := codel.NewAlgorithm(
-		codel.WithTargetDelay(5*time.Millisecond),
-		codel.WithInterval(100*time.Millisecond),
-	)
-	if err != nil {
-		log.Fatalf("Failed to create CoDel algorithm: %v", err)
-	}
-
 	cfg := fhttp.DefaultConfig()
-	cfg.Algorithm = algo
+	// The thresholds sit below the ~50ms /slow endpoint so a short load test reaches Emergency and sheds load.
+	cfg.Algorithm = floodgate.NewThresholdAlgorithm(floodgate.Thresholds{
+		P99Emergency: 40 * time.Millisecond,
+		P95Critical:  30 * time.Millisecond,
+		EMACritical:  25 * time.Millisecond,
+		P95Moderate:  20 * time.Millisecond,
+		EMAWarning:   10 * time.Millisecond,
+		SlopeWarning: 5 * time.Millisecond,
+	})
 	cfg.EnableMetrics = true
 	cfg.Logger = floodgate.NewDefaultLogger()
 
@@ -173,7 +171,7 @@ func main() {
 	log.Println("  2. Logging (request/response logging)")
 	log.Println("  3. CORS (cross-origin headers)")
 	log.Println("  4. Timeout (30s request timeout)")
-	log.Println("  5. Backpressure (CoDel adaptive)")
+	log.Println("  5. Backpressure (threshold-based)")
 	log.Println()
 	log.Println("Available endpoints:")
 	log.Println("  GET  /fast   - Fast endpoint (~1ms)")

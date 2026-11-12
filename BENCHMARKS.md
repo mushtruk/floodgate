@@ -277,11 +277,6 @@ go tool pprof mem.prof
 |-----------|---------|-------------|-------|
 | `ThresholdAlgorithm.Decide` | **4.270 ns/op** | 0 B/op, 0 allocs/op | Simple threshold comparison |
 | `NoOpAlgorithm.Decide` | **0.315 ns/op** | 0 B/op, 0 allocs/op | Baseline overhead |
-| `CoDel.Decide` | **49.75 ns/op** | 0 B/op, 0 allocs/op | Queue management logic |
-| `CoDel.Decide_HighLatency` | **49.80 ns/op** | 0 B/op, 0 allocs/op | Consistent under load |
-| `CoDel.ControlLaw` | **13.54 ns/op** | 0 B/op, 0 allocs/op | Drop interval calculation |
-| `QueueAlgorithm.Enqueue` | **517.8 ns/op** | 0 B/op, 0 allocs/op | Zero allocs via pooling |
-| `QueueAlgorithm.Throughput` | **800.4 ns/op** | 0 B/op, 0 allocs/op | End-to-end processing |
 
 ### Tracker Benchmarks (v1.5.0)
 
@@ -339,10 +334,9 @@ cb.RecordFailure()  // +15 ns/op (logging + metrics + alerting)
 #### Algorithm Wrappers (New in v1.5.0)
 
 ```go
-// Unwrapped CoDel
-base, _ := codel.NewAlgorithm()
-var algo Algorithm = base
-decision := algo.Decide(stats)  // 49.75 ns/op (baseline)
+// Unwrapped Threshold
+var algo Algorithm = NewThresholdAlgorithm(DefaultThresholds())
+decision := algo.Decide(stats)  // 4.27 ns/op (baseline)
 
 // WithTracing
 algo = WithTracing(algo, tracer)
@@ -350,7 +344,7 @@ decision = algo.Decide(stats)  // +~100 ns (span overhead)
 
 // WithCaching
 cached := NewCachedAlgorithm(algo, 100*time.Millisecond)
-decision = cached.Decide(stats)  // Hit: +5 ns, Miss: +10 ns + 49.75 ns
+decision = cached.Decide(stats)  // Hit: +5 ns, Miss: +10 ns + 4.27 ns
 ```
 
 **Performance**: Tracing adds ~100ns (acceptable for distributed tracing value), caching adds minimal overhead.
@@ -370,8 +364,6 @@ decision = cached.Decide(stats)  // Hit: +5 ns, Miss: +10 ns + 49.75 ns
 | Metric | v1.4.1 | v1.5.0 | Change | Status |
 |--------|--------|--------|--------|--------|
 | Threshold.Decide | 4.27 ns | 4.27 ns | 0% | ✅ No regression |
-| CoDel.Decide | 49.5 ns | 49.75 ns | +0.5% | ✅ Within noise |
-| Queue.Enqueue | 517.3 ns | 517.8 ns | +0.1% | ✅ Within noise |
 | Tracker.Process | 38.9 ns | 32.42 ns | **-16.7%** | 🚀 Improvement |
 | Tracker.Value | 34.64 ns | 28.76 ns | **-17.0%** | 🚀 Improvement |
 | gRPC Interceptor | 1.37 ms | 1.23 ms | **-10.2%** | 🚀 Improvement |

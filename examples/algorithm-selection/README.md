@@ -1,45 +1,47 @@
 # Algorithm Selection Example
 
-This example demonstrates how to select and configure different backpressure algorithms based on service characteristics and runtime configuration.
+This example demonstrates how to select and configure a backpressure algorithm from a service profile given at runtime.
 
-## Algorithms
+## Profiles
 
-### 1. Standard CoDel (`standard`)
-- **Performance**: 49 ns/op
-- **Best for**: CPU-bound services
-- **Trade-off**: Uses P95 as sojourn time proxy (not true queue time)
+`SERVICE_PROFILE` picks the algorithm:
 
-### 2. Queue CoDel (`queue`)
-- **Performance**: 600 ns/op
-- **Best for**: I/O-bound services (databases, external APIs)
-- **Trade-off**: Higher overhead, but true sojourn time measurement
+### 1. `default` (or unset)
+- **Algorithm**: `floodgate.NewThresholdAlgorithm(floodgate.DefaultThresholds())`
+- **Best for**: Most services; predictable, multi-signal behavior
+- **Trade-off**: Thresholds suit typical web latencies, not every workload
 
-### 3. Threshold (`threshold`)
-- **Performance**: 5 ns/op
-- **Best for**: Predictable behavior, multi-signal monitoring
-- **Trade-off**: Requires manual threshold tuning
+### 2. `latency-sensitive`
+- **Algorithm**: Threshold with tighter thresholds
+- **Best for**: Low-latency APIs that should shed load early
+- **Trade-off**: Rejects sooner under transient spikes
+
+### 3. `high-throughput`
+- **Algorithm**: Threshold wrapped in `floodgate.NewCachedAlgorithm` with a 100ms TTL
+- **Best for**: Very high request rates where each decision should be as cheap as possible
+- **Trade-off**: Reacts to latency changes up to one TTL late
+
+### 4. `disabled`
+- **Algorithm**: `floodgate.NoOpAlgorithm`
+- **Best for**: Debugging or temporarily turning backpressure off
+- **Trade-off**: No load shedding at all
+
+Any other value stops the program with an error naming the valid profiles.
 
 ## Usage
 
-### Environment-driven selection:
-
 ```bash
-# Use Standard CoDel (CPU-bound)
-BACKPRESSURE_ALGORITHM=standard go run main.go
+# Default thresholds
+go run main.go
 
-# Use Queue CoDel (I/O-bound)
-BACKPRESSURE_ALGORITHM=queue go run main.go
+# Tight thresholds
+SERVICE_PROFILE=latency-sensitive go run main.go
 
-# Use Threshold (default, proven)
-BACKPRESSURE_ALGORITHM=threshold go run main.go
-```
+# Cached decisions
+SERVICE_PROFILE=high-throughput go run main.go
 
-### Auto-recommendation:
-
-```bash
-# Let the system recommend based on service profile
-AUTO_SELECT=true CPU_BOUND=true go run main.go
-AUTO_SELECT=true CPU_BOUND=false go run main.go
+# Backpressure off
+SERVICE_PROFILE=disabled go run main.go
 ```
 
 ## Testing
@@ -59,30 +61,9 @@ hey -z 30s -c 100 http://localhost:8080/slow
 
 ## Decision Matrix
 
-| Service Type | Avg Latency | Algorithm | Why |
-|-------------|-------------|-----------|-----|
-| API Gateway | < 10ms | `standard` | Low overhead |
-| Database Proxy | 50-200ms | `queue` | True sojourn time matters |
-| Compute Service | 10-50ms | `threshold` | Multi-signal safety |
-| External API | > 200ms | `queue` | High variance |
-
-## Configuration Examples
-
-### Production (environment variables)
-```bash
-export BACKPRESSURE_ALGORITHM=queue
-export BACKPRESSURE_TARGET_DELAY=5ms
-export BACKPRESSURE_WORKERS=200
-export BACKPRESSURE_QUEUE_SIZE=2000
-```
-
-### Staging (faster feedback)
-```bash
-export BACKPRESSURE_ALGORITHM=standard
-export BACKPRESSURE_TARGET_DELAY=2ms
-```
-
-### Development (safe defaults)
-```bash
-export BACKPRESSURE_ALGORITHM=threshold
-```
+| Service Type | Avg Latency | Profile | Why |
+|-------------|-------------|---------|-----|
+| API Gateway | < 10ms | `latency-sensitive` | Shed load before latency compounds |
+| Compute Service | 10-50ms | `default` | Multi-signal safety |
+| High-volume Edge | < 5ms | `high-throughput` | Cheapest per-request decision |
+| Local Debugging | any | `disabled` | No rejections while investigating |

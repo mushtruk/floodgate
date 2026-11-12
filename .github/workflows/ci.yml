@@ -106,7 +106,6 @@ jobs:
           - otel-metrics
           - datadog-metrics
           - tracing-jaeger
-          - codel-http
     steps:
       - name: Checkout code
         uses: actions/checkout@v6

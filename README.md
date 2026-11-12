@@ -8,7 +8,6 @@ A sophisticated, production-ready Go library for adaptive backpressure and load 
 
 ## Features
 
-- ⚡ **Adaptive Backpressure**: Self-tuning load shedding via the CoDel (Controlled Delay) algorithm — drops requests when queueing delay persistently exceeds a target, with no manual threshold tuning required
 - 📊 **Percentile Tracking**: Monitors P50, P95, P99 latencies for tail latency detection
 - 🔌 **Circuit Breaker**: Prevents rapid on/off toggling during emergency states
 - 🎯 **gRPC & HTTP Middleware**: Drop-in middleware for gRPC and HTTP servers
@@ -19,7 +18,7 @@ A sophisticated, production-ready Go library for adaptive backpressure and load 
 - 🔍 **Distributed Tracing**: OpenTelemetry tracing for visualizing backpressure in Jaeger, Zipkin, or APM tools
 - 🔌 **Pluggable Logging**: Context-aware logging interface compatible with any Go logging framework
 - 🎨 **Decorator Patterns**: Composable wrappers for observability (logging, metrics, tracing, caching, filtering)
-- 🔀 **Pluggable Algorithms**: CoDel, Threshold, or custom backpressure algorithms
+- 🔀 **Pluggable Algorithms**: Threshold, NoOp, or custom backpressure algorithms
 
 ## Installation
 
@@ -251,7 +250,7 @@ fmt.Printf("Drop rate: %.2f%%\n", dispatcher.DropRate())
 - **Total overhead**: <3μs per request (0.3% overhead for 1ms requests, 0.03% for 10ms)
 - **Stats evaluation**: 29ns via intelligent caching (v1.5.0: 17% faster)
 - **Process latency**: 32ns to record a measurement (v1.5.0: 16.7% faster)
-- **Algorithm decisions**: 4.3ns (Threshold) to 50ns (CoDel), zero allocations
+- **Algorithm decisions**: 4.3ns (Threshold), zero allocations
 - **Memory**: ~3KB per tracked method (200 samples, configurable: 100-1000)
 - **Zero allocations**: All hot paths are allocation-free
 - **Concurrency**: Thread-safe with minimal lock contention
@@ -308,16 +307,10 @@ if cb.Allow() {
 Add tracing, caching, and fallback behavior to algorithms:
 
 ```go
-import (
-    "github.com/mushtruk/floodgate"
-    "github.com/mushtruk/floodgate/algorithms/codel"
-)
+import "github.com/mushtruk/floodgate"
 
 // Base algorithm
-base, err := codel.NewAlgorithm()
-if err != nil {
-    log.Fatal(err)
-}
+base := floodgate.NewThresholdAlgorithm(floodgate.DefaultThresholds())
 
 // Add distributed tracing
 var algo floodgate.Algorithm = floodgate.WithTracing(base, tracer)
