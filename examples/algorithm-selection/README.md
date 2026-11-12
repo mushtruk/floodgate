@@ -16,12 +16,7 @@ This example demonstrates how to select and configure a backpressure algorithm f
 - **Best for**: Low-latency APIs that should shed load early
 - **Trade-off**: Rejects sooner under transient spikes
 
-### 3. `high-throughput`
-- **Algorithm**: Threshold wrapped in `floodgate.NewCachedAlgorithm` with a 100ms TTL
-- **Best for**: Very high request rates where each decision should be as cheap as possible
-- **Trade-off**: Reacts to latency changes up to one TTL late
-
-### 4. `disabled`
+### 3. `disabled`
 - **Algorithm**: `floodgate.NoOpAlgorithm`
 - **Best for**: Debugging or temporarily turning backpressure off
 - **Trade-off**: No load shedding at all
@@ -36,9 +31,6 @@ go run main.go
 
 # Tight thresholds
 SERVICE_PROFILE=latency-sensitive go run main.go
-
-# Cached decisions
-SERVICE_PROFILE=high-throughput go run main.go
 
 # Backpressure off
 SERVICE_PROFILE=disabled go run main.go
@@ -65,5 +57,4 @@ hey -z 30s -c 100 http://localhost:8080/slow
 |-------------|-------------|---------|-----|
 | API Gateway | < 10ms | `latency-sensitive` | Shed load before latency compounds |
 | Compute Service | 10-50ms | `default` | Multi-signal safety |
-| High-volume Edge | < 5ms | `high-throughput` | Cheapest per-request decision |
 | Local Debugging | any | `disabled` | No rejections while investigating |
